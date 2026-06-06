@@ -1,1 +1,1 @@
-worker: python meme_scanner.py
+web: python meme_scanner.py
