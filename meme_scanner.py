@@ -94,18 +94,35 @@ def ai_analyze():
             indicators = calc_indicators(klines_1h, klines_15m, klines_4h)
             result = analyze_coin(symbol, "okx", indicators)
         else:
-            # OKX 沒有就用傳入的基本資料做簡單分析
-            result = {
-                "symbol": symbol, "exchange": "binance",
-                "direction": "WATCH", "score": 40,
-                "confidence": "低", "summary": "資料不足，建議觀望",
-                "reason": "無法取得 K 線資料，無法進行技術分析",
-                "entry_zone": "N/A", "stop_loss": "N/A",
-                "target_1": "N/A", "target_2": "N/A",
-                "timeframe": "N/A", "risk_note": "僅供參考，非投資建議",
-                "price": price, "change_24h": change,
-                "vol_ratio": 1.0, "rsi_1h": 50
-            }
+            # OKX 沒有，自動改用 Binance
+            log.info(f"OKX 無資料，改用 Binance 抓 {symbol}")
+            klines_1h  = get_all_klines(symbol, "binance", interval="1h",  limit=100)
+            klines_15m = get_all_klines(symbol, "binance", interval="15m", limit=100)
+            klines_4h  = get_all_klines(symbol, "binance", interval="4h",  limit=50)
+            if klines_1h and klines_15m:
+                indicators = calc_indicators(klines_1h, klines_15m, klines_4h)
+                result = analyze_coin(symbol, "binance", indicators)
+            else:
+                # 兩家都沒有，改用 Bybit
+                log.info(f"Binance 也無資料，改用 Bybit 抓 {symbol}")
+                klines_1h  = get_all_klines(symbol, "bybit", interval="1h",  limit=100)
+                klines_15m = get_all_klines(symbol, "bybit", interval="15m", limit=100)
+                klines_4h  = get_all_klines(symbol, "bybit", interval="4h",  limit=50)
+                if klines_1h and klines_15m:
+                    indicators = calc_indicators(klines_1h, klines_15m, klines_4h)
+                    result = analyze_coin(symbol, "bybit", indicators)
+                else:
+                    result = {
+                        "symbol": symbol, "exchange": "N/A",
+                        "direction": "WATCH", "score": 40,
+                        "confidence": "低", "summary": "三大交易所均無資料",
+                        "reason": "此幣可能為純鏈上幣，未在主流交易所上架，建議透過 DEX 查詢",
+                        "entry_zone": "N/A", "stop_loss": "N/A",
+                        "target_1": "N/A", "target_2": "N/A",
+                        "timeframe": "N/A", "risk_note": "鏈上幣風險極高，務必先查合約",
+                        "price": price, "change_24h": change,
+                        "vol_ratio": 1.0, "rsi_1h": 50
+                    }
 
         if not result:
             result = {"direction": "WATCH", "score": 40, "summary": "無明確訊號", "reason": "指標中性"}
