@@ -28,21 +28,20 @@ log = logging.getLogger(__name__)
 
 # ── 監控幣種設定 ──────────────────────────────────────────────
 WATCH_LIST = [
-    # symbol,       exchanges（OKX/Bybit 優先，避開 Binance 地區封鎖）
-    ("LUNA",   ["okx", "bybit"]),
+    ("LUNA",   ["okx"]),
     ("LUNC",   ["okx"]),
-    ("DOGE",   ["okx", "bybit"]),
-    ("SHIB",   ["okx", "bybit"]),
-    ("PEPE",   ["okx", "bybit"]),
-    ("FLOKI",  ["okx", "bybit"]),
+    ("DOGE",   ["okx"]),
+    ("SHIB",   ["okx"]),
+    ("PEPE",   ["okx"]),
+    ("FLOKI",  ["okx"]),
     ("BONK",   ["okx"]),
-    ("WIF",    ["okx", "bybit"]),
+    ("WIF",    ["okx"]),
     ("NEIRO",  ["okx"]),
     ("MEME",   ["okx"]),
 ]
 
 SCAN_INTERVAL_MIN = int(os.getenv("MEME_SCAN_INTERVAL_MIN", "15"))
-MIN_SCORE_TO_ALERT = int(os.getenv("MIN_SCORE_TO_ALERT", "60"))  # 0-100，低於此分不推播
+MIN_SCORE_TO_ALERT = int(os.getenv("MIN_SCORE_TO_ALERT", "45"))  # 0-100，低於此分不推播
 # ──────────────────────────────────────────────────────────────
 
 
