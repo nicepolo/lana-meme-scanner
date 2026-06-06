@@ -7,6 +7,7 @@ LANA Meme Scanner v1.1
 import os, time, json, logging, threading
 from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify
+from flask_cors import CORS
 import schedule
 from dotenv import load_dotenv
 
@@ -21,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
-
+CORS(app)
 # ── 設定 ──────────────────────────────────────────────────────
 WATCH_LIST = [
     ("LUNA",   ["okx"]),
