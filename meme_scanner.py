@@ -72,8 +72,52 @@ def meme_signals():
             "watch_count": len(WATCH_LIST),
         })
 
-@app.route("/api/health")
-def health():
+@app.route("/api/ai_analyze", methods=["POST"])
+def ai_analyze():
+    """讓主網頁呼叫，分析任意幣種的多空方向"""
+    from flask import request as freq
+    body = freq.get_json() or {}
+    symbol = body.get("symbol", "").upper().strip()
+    price  = float(body.get("price", 0))
+    change = float(body.get("change_24h", 0))
+
+    if not symbol:
+        return jsonify({"error": "symbol required"}), 400
+
+    try:
+        # 抓 OKX K 線
+        klines_1h  = get_all_klines(symbol, "okx", interval="1h",  limit=100)
+        klines_15m = get_all_klines(symbol, "okx", interval="15m", limit=100)
+        klines_4h  = get_all_klines(symbol, "okx", interval="4h",  limit=50)
+
+        if klines_1h and klines_15m:
+            indicators = calc_indicators(klines_1h, klines_15m, klines_4h)
+            result = analyze_coin(symbol, "okx", indicators)
+        else:
+            # OKX 沒有就用傳入的基本資料做簡單分析
+            result = {
+                "symbol": symbol, "exchange": "binance",
+                "direction": "WATCH", "score": 40,
+                "confidence": "低", "summary": "資料不足，建議觀望",
+                "reason": "無法取得 K 線資料，無法進行技術分析",
+                "entry_zone": "N/A", "stop_loss": "N/A",
+                "target_1": "N/A", "target_2": "N/A",
+                "timeframe": "N/A", "risk_note": "僅供參考，非投資建議",
+                "price": price, "change_24h": change,
+                "vol_ratio": 1.0, "rsi_1h": 50
+            }
+
+        if not result:
+            result = {"direction": "WATCH", "score": 40, "summary": "無明確訊號", "reason": "指標中性"}
+
+        return jsonify(result)
+
+    except Exception as e:
+        log.error(f"ai_analyze [{symbol}] 錯誤: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+
     with _lock:
         return jsonify({
             "status": "ok",
