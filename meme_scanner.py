@@ -24,19 +24,25 @@ app = Flask(__name__)
 
 # ── 設定 ──────────────────────────────────────────────────────
 WATCH_LIST = [
-    ("LUNA",  ["okx"]),
-    ("LUNC",  ["okx"]),
-    ("DOGE",  ["okx"]),
-    ("SHIB",  ["okx"]),
-    ("PEPE",  ["okx"]),
-    ("FLOKI", ["okx"]),
-    ("BONK",  ["okx"]),
-    ("WIF",   ["okx"]),
-    ("NEIRO", ["okx"]),
-    ("MEME",  ["okx"]),
+    ("LUNA",   ["okx"]),
+    ("LUNC",   ["okx"]),
+    ("DOGE",   ["okx"]),
+    ("SHIB",   ["okx"]),
+    ("PEPE",   ["okx"]),
+    ("FLOKI",  ["okx"]),
+    ("BONK",   ["okx"]),
+    ("WIF",    ["okx"]),
+    ("NEIRO",  ["okx"]),
+    ("MEME",   ["okx"]),
+    ("POPCAT", ["okx"]),
+    ("MEW",    ["okx"]),
+    ("BRETT",  ["okx"]),
+    ("MOG",    ["okx"]),
+    ("TURBO",  ["okx"]),
+    ("GIGA",   ["okx"]),
 ]
 SCAN_INTERVAL_MIN  = int(os.getenv("MEME_SCAN_INTERVAL_MIN", "15"))
-MIN_SCORE_TO_ALERT = int(os.getenv("MIN_SCORE_TO_ALERT", "45"))
+MIN_SCORE_TO_ALERT = int(os.getenv("MIN_SCORE_TO_ALERT", "60"))
 PORT = int(os.getenv("PORT", "8080"))
 TZ_TAIPEI = timezone(timedelta(hours=8))
 
