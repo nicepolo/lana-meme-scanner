@@ -83,7 +83,7 @@ def _call_gemini(symbol: str, prompt: str) -> dict | None:
         }
         data = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1000}
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2000}
         }
         r = requests.post(url, headers=headers, json=data, timeout=15)
         if not r.ok:
