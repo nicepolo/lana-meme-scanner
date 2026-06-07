@@ -26,7 +26,6 @@ CORS(app)
 # ── 設定 ──────────────────────────────────────────────────────
 WATCH_LIST = [
     ("LUNA",   ["okx"]),
-    ("LUNC",   ["okx"]),
     ("DOGE",   ["okx"]),
     ("SHIB",   ["okx"]),
     ("PEPE",   ["okx"]),
@@ -37,8 +36,6 @@ WATCH_LIST = [
     ("MEME",   ["okx"]),
     ("POPCAT", ["okx"]),
     ("MEW",    ["okx"]),
-    ("BRETT",  ["okx"]),
-    ("MOG",    ["okx"]),
     ("TURBO",  ["okx"]),
 ]
 SCAN_INTERVAL_MIN  = int(os.getenv("MEME_SCAN_INTERVAL_MIN", "15"))
