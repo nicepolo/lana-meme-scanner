@@ -72,75 +72,30 @@ def _build_prompt(symbol: str, exchange: str, indicators: dict) -> str:
 
 
 def _call_gemini(symbol: str, prompt: str) -> dict | None:
-    """呼叫 Gemini Flash（免費額度 1500次/天）"""
+    """呼叫 Gemini Flash（免費額度）"""
+    if not GEMINI_KEY:
+        return None
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_KEY
+        }
         data = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1000}
         }
-        r = requests.post(url, json=data, timeout=15)
+        r = requests.post(url, headers=headers, json=data, timeout=15)
         if not r.ok:
             log.warning(f"Gemini 失敗 {r.status_code}: {r.text[:100]}")
             return None
-
         text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
         text = text.strip().replace("```json", "").replace("```", "").strip()
         result = json.loads(text)
-        result["symbol"]   = symbol
+        result["symbol"] = symbol
         result["exchange"] = "gemini-flash"
-        log.info(f"✅ Gemini 分析 {symbol}: {result.get('direction')} {result.get('score')}")
+        log.info(f"✅ Gemini 分析{symbol}: {result.get('direction')} {result.get('score')}")
         return result
-
     except Exception as e:
-        log.error(f"Gemini 分析失敗 {symbol}: {e}")
+        log.error(f"Gemini 分析失敗{symbol}: {e}")
         return None
-
-
-def _call_claude(symbol: str, prompt: str) -> dict | None:
-    """備援：呼叫 Claude Haiku（便宜版）"""
-    try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 300,
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=15
-        )
-        if not r.ok:
-            log.warning(f"Claude 備援失敗 {r.status_code}")
-            return None
-
-        text = r.json()["content"][0]["text"]
-        text = text.strip().replace("```json", "").replace("```", "").strip()
-        result = json.loads(text)
-        result["symbol"]   = symbol
-        result["exchange"] = "claude-haiku"
-        log.info(f"✅ Claude 備援 {symbol}: {result.get('direction')}")
-        return result
-
-    except Exception as e:
-        log.error(f"Claude 備援失敗 {symbol}: {e}")
-        return None
-
-
-def _default_result(symbol: str, indicators: dict) -> dict:
-    return {
-        "symbol": symbol, "exchange": "N/A",
-        "direction": "WATCH", "score": 40,
-        "confidence": "低", "summary": "AI 暫時無法分析",
-        "reason": "請稍後重試", "entry_zone": "N/A",
-        "stop_loss": "N/A", "target_1": "N/A", "target_2": "N/A",
-        "timeframe": "N/A", "risk_note": "AI 服務暫時不可用",
-        "price": indicators.get("price", 0),
-        "change_24h": indicators.get("change_24h", 0),
-        "vol_ratio": indicators.get("vol_ratio", 1.0),
-        "rsi_1h": indicators.get("rsi_1h", 50)
-    }
