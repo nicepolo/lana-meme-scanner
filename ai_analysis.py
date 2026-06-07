@@ -76,7 +76,7 @@ def _call_gemini(symbol: str, prompt: str) -> dict | None:
     if not GEMINI_KEY:
         return None
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
         headers = {
             "Content-Type": "application/json",
             "x-goog-api-key": GEMINI_KEY
