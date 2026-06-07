@@ -52,13 +52,33 @@ def get_all_klines(symbol: str, exchange: str, interval: str = "1h", limit: int 
 
 
 def _binance_klines(symbol: str, interval: str, limit: int):
-    url = "https://api.binance.com/api/v3/klines"
-    params = {"symbol": f"{symbol}USDT", "interval": interval, "limit": limit}
-    r = requests.get(url, params=params, headers=HEADERS, proxies=PROXIES, timeout=10)
-    r.raise_for_status()
-    raw = r.json()
-    return [[int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])]
-            for k in raw]
+    # 先試現貨
+    try:
+        url = "https://api.binance.com/api/v3/klines"
+        params = {"symbol": f"{symbol}USDT", "interval": interval, "limit": limit}
+        r = requests.get(url, params=params, headers=HEADERS, proxies=PROXIES, timeout=10)
+        r.raise_for_status()
+        raw = r.json()
+        if raw and isinstance(raw, list):
+            return [[int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])]
+                    for k in raw]
+    except Exception:
+        pass
+
+    # 現貨沒有，改試合約（永續）
+    try:
+        url = "https://fapi.binance.com/fapi/v1/klines"
+        params = {"symbol": f"{symbol}USDT", "interval": interval, "limit": limit}
+        r = requests.get(url, params=params, headers=HEADERS, proxies=PROXIES, timeout=10)
+        r.raise_for_status()
+        raw = r.json()
+        if raw and isinstance(raw, list):
+            return [[int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])]
+                    for k in raw]
+    except Exception:
+        pass
+
+    return []
 
 
 def _bybit_klines(symbol: str, interval: str, limit: int):
