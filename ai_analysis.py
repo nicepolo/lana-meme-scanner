@@ -91,17 +91,17 @@ def _call_gemini(symbol: str, prompt: str) -> dict | None:
             return None
         text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
         text = text.strip().replace("```json", "").replace("```", "").strip()
-        try:
-    result = json.loads(text)
-except Exception:
-    # JSON 截斷，給預設值
-    result = {
-        "direction": "WATCH", "score": 35,
-        "confidence": "低", "summary": "AI分析結果解析失敗",
-        "reason": "回傳格式異常", "entry_zone": "N/A",
-        "stop_loss": "N/A", "target_1": "N/A", "target_2": "N/A",
-        "timeframe": "4-8小時", "risk_note": "請手動確認"
-    }
+       try:
+            result = json.loads(text)
+        except Exception:
+            # JSON 截斷，給預設值
+            result = {
+                "direction": "WATCH", "score": 35,
+                "confidence": "低", "summary": "AI分析結果解析失敗",
+                "reason": "回傳格式異常", "entry_zone": "N/A",
+                "stop_loss": "N/A", "target_1": "N/A", "target_2": "N/A",
+                "timeframe": "4-8小時", "risk_note": "請手動確認"
+            }
         result["symbol"] = symbol
         result["exchange"] = "gemini-flash"
         log.info(f"✅ Gemini 分析{symbol}: {result.get('direction')} {result.get('score')}")
