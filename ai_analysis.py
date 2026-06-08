@@ -13,22 +13,33 @@ ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 def _calc_lana_score(indicators: dict) -> tuple[int, str]:
     """
-    與網頁 calc_lana_score 完全一致的評分邏輯
+    與網頁 calc_lana_score 完全一致的評分邏輯（使用 MA 排列判斷趨勢）
     回傳 (score, bb_zone)
     """
     rsi   = indicators.get("rsi_1h", 50)
-    vr    = indicators.get("vol_ratio", 1.0)
-    trend = indicators.get("trend", "neutral")
+    vr    = indicators.get("vol_ratio", indicators.get("vol_ratio_1h", 1.0))
     fr    = indicators.get("funding_rate", 0)
-    bb    = indicators.get("bb_position", 0.5)   # 0=下軌, 1=上軌
 
-    # ── 趨勢 25分 ──
-    if trend == "up":
-        s_trend = 25
-    elif trend == "neutral":
-        s_trend = 5
+    # BB 位置：優先用 bb_1h dict，備用 bb_position float
+    bb_data = indicators.get("bb_1h", {})
+    if isinstance(bb_data, dict):
+        bb = bb_data.get("pct_b", 0.5)
     else:
-        s_trend = 0
+        bb = indicators.get("bb_position", 0.5)
+
+    # ── 趨勢 25分：用 MA7/MA25/MA99 排列（對齊 lana-monitor MA7/MA30/MA120）──
+    ma7  = indicators.get("ma7_1h")
+    ma25 = indicators.get("ma25_1h")
+    ma99 = indicators.get("ma99_1h")
+    price = indicators.get("price", 0)
+    if ma7 and ma25 and ma99 and ma7 > ma25 > ma99:
+        s_trend = 25   # 多頭排列
+    elif ma7 and ma25 and ma7 > ma25:
+        s_trend = 15   # 短線偏多
+    elif ma7 and ma25 and ma7 < ma25:
+        s_trend = 0    # 空頭排列
+    else:
+        s_trend = 5    # 資料不足
 
     # ── RSI 20分 ──
     if rsi is None:          s_rsi = 10
@@ -71,18 +82,26 @@ def _calc_lana_score(indicators: dict) -> tuple[int, str]:
 
 
 def _get_direction(score: int, indicators: dict) -> str:
-    rsi   = indicators.get("rsi_1h", 50)
-    trend = indicators.get("trend", "neutral")
-    fr    = indicators.get("funding_rate", 0)
+    rsi  = indicators.get("rsi_1h", 50)
+    fr   = indicators.get("funding_rate", 0)
+    ma7  = indicators.get("ma7_1h")
+    ma25 = indicators.get("ma25_1h")
+    ma99 = indicators.get("ma99_1h")
 
-    if score >= 60 and trend == "up" and rsi < 72:
+    # 判斷趨勢方向
+    if ma7 and ma25 and ma7 > ma25:
+        trend_up = True
+    else:
+        trend_up = False
+
+    if score >= 65 and trend_up and rsi < 72:
         return "LONG"
-    elif rsi > 75 or (fr > 0.001 and trend != "up"):
+    elif rsi > 75 or (fr > 0.001 and not trend_up):
         return "SHORT"
-    elif score < 40:
+    elif score < 45:
         return "WATCH"
     else:
-        return "LONG" if trend == "up" else "WATCH"
+        return "LONG" if trend_up else "WATCH"
 
 
 def _build_summary_prompt(symbol: str, exchange: str, indicators: dict, score: int, direction: str) -> str:
