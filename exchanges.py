@@ -124,20 +124,21 @@ def _okx_klines(symbol: str, interval: str, limit: int):
 
 
 def get_current_price(symbol: str, exchange: str) -> float:
-    """快速抓現價"""
+    """快速抓現價 — 優先用 OKX（Railway 封鎖 Binance/Bybit）"""
+    # 永遠先嘗試 OKX（Railway 允許）
     try:
-        exchange = exchange.lower()
-        if exchange == "binance":
-            url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT"
-            return float(requests.get(url, timeout=5).json()["price"])
-        elif exchange == "bybit":
-            url = f"https://api.bybit.com/v5/market/tickers?category=spot&symbol={symbol}USDT"
-            data = requests.get(url, timeout=5).json()
-            return float(data["result"]["list"][0]["lastPrice"])
-        elif exchange == "okx":
-            url = f"https://www.okx.com/api/v5/market/ticker?instId={symbol}-USDT"
-            data = requests.get(url, timeout=5).json()
+        url = f"https://www.okx.com/api/v5/market/ticker?instId={symbol}-USDT"
+        data = requests.get(url, timeout=5).json()
+        if data.get("data"):
+            return float(data["data"][0]["last"])
+    except Exception:
+        pass
+    # OKX 合約備援
+    try:
+        url = f"https://www.okx.com/api/v5/market/ticker?instId={symbol}-USDT-SWAP"
+        data = requests.get(url, timeout=5).json()
+        if data.get("data"):
             return float(data["data"][0]["last"])
     except Exception as e:
         log.error(f"[{exchange}] {symbol} 現價抓取失敗: {e}")
-        return 0.0
+    return 0.0
