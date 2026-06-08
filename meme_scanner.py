@@ -14,7 +14,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "45"))
+MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "70"))
 MIN_CHANGE  = float(os.getenv("MIN_CHANGE_PCT", "3"))
 MIN_VOL     = float(os.getenv("MIN_VOLUME_USDT", "500000"))
 MAX_COINS   = int(os.getenv("MAX_COINS_TO_SCAN", "50"))
