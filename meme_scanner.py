@@ -14,7 +14,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "70"))
+MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "55"))
 MIN_CHANGE  = float(os.getenv("MIN_CHANGE_PCT", "3"))
 MIN_VOL     = float(os.getenv("MIN_VOLUME_USDT", "500000"))
 MAX_COINS   = int(os.getenv("MAX_COINS_TO_SCAN", "50"))
@@ -216,7 +216,14 @@ def main():
                         res["target_2"]  = _fix_price(res.get("target_2"),  round(p * 1.08, 6))
 
                 log.info(f"[{exchange}] {coin} → {direction} {score}分 FR:{fr:.4f}")
-                if score >= MIN_SCORE:
+                # LONG/SHORT: score >= MIN_SCORE 就推
+                # WATCH: 要 score >= 65 才推（高信心才值得關注）
+                should_alert = False
+                if direction in ("LONG", "SHORT") and score >= MIN_SCORE:
+                    should_alert = True
+                elif direction == "WATCH" and score >= 65:
+                    should_alert = True
+                if should_alert:
                     signals.append(res)
 
         except Exception as e:
