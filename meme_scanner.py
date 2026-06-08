@@ -256,7 +256,8 @@ def run_scan():
         _cache["last_scan"]   = now_str
         _cache["scan_count"] += 1
 
-    # 推 Telegram
+    # 推 Telegram（按分數高到低排序）
+    top_signals.sort(key=lambda x: x.get("score", 0), reverse=True)
     if top_signals:
         send_telegram(top_signals)
         log.info(f"📨 推播 {len(top_signals)} 個訊號")
