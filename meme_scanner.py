@@ -39,9 +39,9 @@ _cache = {
 }
 _cache_lock = threading.Lock()
 
-# 去重：記錄最近一輪已推送的幣，避免同一輪重複推
-_last_alerted = set()  # {symbol}
-_last_alerted_time = 0  # Unix timestamp，超過 30 分鐘自動重置
+# 去重：記錄每顆幣最後推送的 timestamp，冷卻期內不重複推
+_last_alerted = {}  # {symbol: timestamp}
+_last_alerted_time = 0
 
 # ── Flask ────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -263,29 +263,57 @@ def run_scan():
     # 推 Telegram（按分數高到低排序，去重）
     global _last_alerted, _last_alerted_time
     now_ts = time.time()
-    # 超過 30 分鐘重置去重記錄（讓下一輪可以重新推）
-    if now_ts - _last_alerted_time > 1800:
-        _last_alerted = set()
+    cooldown = SCAN_INTERVAL * 60 * 2  # 同一幣需間隔 2 個掃描週期才能再推
     top_signals.sort(key=lambda x: x.get("score", 0), reverse=True)
-    new_signals = [s for s in top_signals if s.get("symbol") not in _last_alerted]
+    new_signals = []
+    for s in top_signals:
+        sym = s.get("symbol")
+        last_t = _last_alerted.get(sym, 0)
+        if now_ts - last_t >= cooldown:
+            new_signals.append(s)
     if new_signals:
         send_telegram(new_signals)
-        _last_alerted.update(s.get("symbol") for s in new_signals)
+        for s in new_signals:
+            _last_alerted[s.get("symbol")] = now_ts
         _last_alerted_time = now_ts
-        log.info(f"📨 推播 {len(new_signals)} 個新訊號（略過 {len(top_signals)-len(new_signals)} 個重複）")
+        log.info(f"📨 推播 {len(new_signals)} 個新訊號（略過 {len(top_signals)-len(new_signals)} 個冷卻中）")
     else:
-        log.info("本輪無新達標訊號")
+        log.info("本輪無新達標訊號（或全部在冷卻期）")
 
     log.info(f"═══ 掃描完畢，共分析 {len(all_results)} 個幣 ═══")
 
 
 def background_scheduler():
-    """每 SCAN_INTERVAL 分鐘跑一次"""
-    # 啟動後立刻跑一次
-    time.sleep(5)
+    """
+    台北時間 03:00-07:00 → 每 120 分鐘跑一次
+    其他時段 → 每 SCAN_INTERVAL 分鐘跑一次（預設 15 分鐘）
+    等到下一個整15分鐘才跑第一次，避免重部署連續觸發
+    """
+    from datetime import datetime, timezone, timedelta
+    TZ_TAIPEI = timezone(timedelta(hours=8))
+
+    # 等到下一個 :00/:15/:30/:45 再跑
+    now = datetime.now(TZ_TAIPEI)
+    m = now.minute
+    s = now.second
+    if m < 15:   wait = (15 - m) * 60 - s
+    elif m < 30: wait = (30 - m) * 60 - s
+    elif m < 45: wait = (45 - m) * 60 - s
+    else:        wait = (60 - m) * 60 - s
+    wait = max(60, wait)  # 至少等 60 秒
+    log.info(f"排程等待 {wait//60}分{wait%60}秒 後首次掃描（台北 {now.strftime('%H:%M')}）")
+    time.sleep(wait)
     run_scan()
+
     while True:
-        time.sleep(SCAN_INTERVAL * 60)
+        now_tpe = datetime.now(TZ_TAIPEI)
+        hour = now_tpe.hour
+        if 3 <= hour < 7:
+            interval_min = 120
+        else:
+            interval_min = SCAN_INTERVAL
+        log.info(f"下次掃描於 {interval_min} 分鐘後（台北 {now_tpe.strftime('%H:%M')}）")
+        time.sleep(interval_min * 60)
         run_scan()
 
 
