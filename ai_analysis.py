@@ -101,7 +101,7 @@ LANA評分：{score}/100  方向建議：{direction}
 RSI 1H={rsi:.0f} | 量能={vr:.1f}x | 趨勢={trend} | BB位置={bb:.2f} | 24H={chg:+.1f}% | FR={fr:+.4f}
 
 請只回傳JSON，不要其他文字：
-{{"summary":"一句話點出最關鍵的訊號（15字內）","reason":"列出2-3個具體數據支撐","risk_note":"最主要的一個風險","timeframe":"建議持倉時間如4-8小時","entry_zone":"{round(price*0.995,6)}-{round(price*1.005,6)}","stop_loss":{round(price*0.97,6)},"target_1":{round(price*1.04,6)},"target_2":{round(price*1.08,6)}}}"""
+{{"summary":"一句話點出最關鍵的訊號（15字內）","reason":"列出2-3個具體數據支撐","risk_note":"最主要的一個風險","timeframe":"建議持倉時間如4-8小時","entry_zone":"{round(price*0.995,4)}-{round(price*1.005,4)}","stop_loss":{round(price*0.97,4)},"target_1":{round(price*1.04,4)},"target_2":{round(price*1.08,4)}}}"""
 
 
 def _call_gemini(symbol: str, prompt: str) -> dict | None:
@@ -112,7 +112,7 @@ def _call_gemini(symbol: str, prompt: str) -> dict | None:
         r = requests.post(url,
             headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY},
             json={"contents": [{"parts": [{"text": prompt}]}],
-                  "generationConfig": {"temperature": 0.2, "maxOutputTokens": 300}},
+                  "generationConfig": {"temperature": 0.2, "maxOutputTokens": 500}},
             timeout=15)
         if not r.ok:
             return None
