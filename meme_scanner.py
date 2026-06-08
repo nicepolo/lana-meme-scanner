@@ -195,6 +195,26 @@ def main():
                 res["vol_ratio"]    = ind.get("vol_ratio", 1.0)
                 res["rsi_1h"]       = ind.get("rsi_1h", 50)
 
+                # 價格備援：AI 給 0/None/文字時，用現價自動計算
+                p = res["price"]
+                def _fix_price(val, default):
+                    try:
+                        v = float(val)
+                        return v if v > 0 else default
+                    except:
+                        return default
+
+                if p > 0:
+                    direction = res.get("direction", "WATCH")
+                    if direction == "SHORT":
+                        res["stop_loss"] = _fix_price(res.get("stop_loss"), round(p * 1.03, 6))
+                        res["target_1"]  = _fix_price(res.get("target_1"),  round(p * 0.96, 6))
+                        res["target_2"]  = _fix_price(res.get("target_2"),  round(p * 0.92, 6))
+                    else:  # LONG or WATCH
+                        res["stop_loss"] = _fix_price(res.get("stop_loss"), round(p * 0.97, 6))
+                        res["target_1"]  = _fix_price(res.get("target_1"),  round(p * 1.04, 6))
+                        res["target_2"]  = _fix_price(res.get("target_2"),  round(p * 1.08, 6))
+
                 log.info(f"[{exchange}] {coin} → {direction} {score}分 FR:{fr:.4f}")
                 if score >= MIN_SCORE:
                     signals.append(res)
