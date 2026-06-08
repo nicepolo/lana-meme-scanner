@@ -14,11 +14,22 @@ def _build_prompt(symbol: str, exchange: str, indicators: dict) -> str:
     bb_pos  = indicators.get("bb_position", 0.5)
     chg     = indicators.get("change_24h", 0)
     fr      = indicators.get("funding_rate", 0)
+    price   = indicators.get("price", 0)
 
-    # 評分標準明確說明給 AI，避免給分保守
+    # 計算參考價位給 AI
+    p_entry_long  = round(price * 0.995, 6) if price else 0
+    p_entry_short = round(price * 1.005, 6) if price else 0
+    p_sl_long     = round(price * 0.97,  6) if price else 0
+    p_sl_short    = round(price * 1.03,  6) if price else 0
+    p_t1_long     = round(price * 1.04,  6) if price else 0
+    p_t2_long     = round(price * 1.08,  6) if price else 0
+    p_t1_short    = round(price * 0.96,  6) if price else 0
+    p_t2_short    = round(price * 0.92,  6) if price else 0
+
     return f"""你是專業加密貨幣短線交易員，根據技術指標給出明確交易建議。
 
 幣種：{symbol}（{exchange}）
+現價：{price}
 技術數據：
 - RSI 1H = {rsi_1h:.0f}（>70超買，<30超賣）
 - RSI 15M = {rsi_15m:.0f}
@@ -27,22 +38,21 @@ def _build_prompt(symbol: str, exchange: str, indicators: dict) -> str:
 - 趨勢 = {trend}（up/down/neutral）
 - 布林位置 = {bb_pos:.2f}（0=下軌，1=上軌，>1突破）
 - 24H漲幅 = {chg:+.1f}%
-- 資金費率 = {fr:+.4f}（正值多頭付空頭，負值反之）
+- 資金費率 = {fr:+.4f}
+
+參考價位（請根據技術分析調整為真實數字）：
+- 做多參考：進場 {p_entry_long}，止損 {p_sl_long}，目標1 {p_t1_long}，目標2 {p_t2_long}
+- 做空參考：進場 {p_entry_short}，止損 {p_sl_short}，目標1 {p_t1_short}，目標2 {p_t2_short}
 
 評分規則（score 0-100）：
 - 60-100分 = 有明確交易機會，direction應為LONG或SHORT
-- 40-59分 = 有潛在機會但需確認，direction可為LONG/SHORT/WATCH
+- 40-59分 = 有潛在機會但需確認
 - 0-39分 = 無明確機會，direction=WATCH
 
-評分參考：
-- 趨勢up + 量比>2 + RSI 45-65 → 65-80分 LONG
-- RSI>75 + 趨勢up + 資金費率>0.001 → 60-70分 SHORT（超買反轉）
-- RSI<30 + 趨勢down反轉跡象 → 60-75分 LONG（超賣反彈）
-- 趨勢neutral + 量比正常 → 35-50分 WATCH
-- 趨勢down + 量比縮量 → 25-40分 WATCH或SHORT
+重要：entry_zone、stop_loss、target_1、target_2 必須是真實數字價格，不能用文字描述。
 
 只輸出JSON，不要其他文字：
-{{"direction":"LONG或SHORT或WATCH","score":數字,"confidence":"高或中或低","summary":"一句話說明機會","reason":"具體技術原因","entry_zone":"具體價格區間","stop_loss":"止損價","target_1":"目標1價","target_2":"目標2價","timeframe":"建議持倉時間","risk_note":"主要風險"}}"""
+{{"direction":"LONG或SHORT或WATCH","score":數字,"confidence":"高或中或低","summary":"一句話說明機會","reason":"具體技術原因","entry_zone":"{p_entry_long}附近（根據分析調整）","stop_loss":數字,"target_1":數字,"target_2":數字,"timeframe":"建議持倉時間","risk_note":"主要風險"}}"""
 
 
 def _call_gemini(symbol: str, prompt: str) -> dict | None:
