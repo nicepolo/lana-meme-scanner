@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "45"))
 MIN_CHANGE  = float(os.getenv("MIN_CHANGE_PCT", "3"))
 MIN_VOL     = float(os.getenv("MIN_VOLUME_USDT", "500000"))
-MAX_COINS   = int(os.getenv("MAX_COINS_TO_SCAN", "30"))
+MAX_COINS   = int(os.getenv("MAX_COINS_TO_SCAN", "50"))
 
 # 主流幣列表（用較嚴格的資金費率邏輯）
 MAJORS  = {"BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","MATIC","LINK","UNI"}
