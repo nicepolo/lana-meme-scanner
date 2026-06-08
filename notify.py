@@ -80,7 +80,16 @@ def _format_signal(idx: int, r: dict) -> str:
     fr       = r.get("funding_rate", None)
     is_major = r.get("is_major", False)
 
-    # 信心標籤（數字 + 文字，對齊網頁格式）
+    # 信心標籤
+    if score >= 65:
+        conf_emoji = "🔥"
+        conf_level = "高"
+    elif score >= 45:
+        conf_emoji = "✅"
+        conf_level = "中"
+    else:
+        conf_emoji = "⚠️"
+        conf_level = "低"
     conf_text = _conf_label(score)
 
     # 資金費率
@@ -102,7 +111,7 @@ def _format_signal(idx: int, r: dict) -> str:
     lines = [
         f"{d_emoji} *#{idx} {symbol}/USDT* ({exchange}){major_tag}",
         f"現價: `{price}`  {change_icon} 24h {change_str}",
-        f"方向: {d_text}  |  信心: *{score}/100* {conf_text}",
+        f"方向: {d_text}  {conf_emoji}  信心: {conf_level}  訊號強度: {score}/100",
         f"RSI 1H: {rsi:.1f}  量能: {vol:.1f}x{fr_str}",
         "",
         f"📌 *{r.get('summary', '')}*",
