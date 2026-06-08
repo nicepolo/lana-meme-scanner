@@ -39,6 +39,10 @@ _cache = {
 }
 _cache_lock = threading.Lock()
 
+# 去重：記錄最近一輪已推送的幣，避免同一輪重複推
+_last_alerted = set()  # {symbol}
+_last_alerted_time = 0  # Unix timestamp，超過 30 分鐘自動重置
+
 # ── Flask ────────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
@@ -256,13 +260,21 @@ def run_scan():
         _cache["last_scan"]   = now_str
         _cache["scan_count"] += 1
 
-    # 推 Telegram（按分數高到低排序）
+    # 推 Telegram（按分數高到低排序，去重）
+    global _last_alerted, _last_alerted_time
+    now_ts = time.time()
+    # 超過 30 分鐘重置去重記錄（讓下一輪可以重新推）
+    if now_ts - _last_alerted_time > 1800:
+        _last_alerted = set()
     top_signals.sort(key=lambda x: x.get("score", 0), reverse=True)
-    if top_signals:
-        send_telegram(top_signals)
-        log.info(f"📨 推播 {len(top_signals)} 個訊號")
+    new_signals = [s for s in top_signals if s.get("symbol") not in _last_alerted]
+    if new_signals:
+        send_telegram(new_signals)
+        _last_alerted.update(s.get("symbol") for s in new_signals)
+        _last_alerted_time = now_ts
+        log.info(f"📨 推播 {len(new_signals)} 個新訊號（略過 {len(top_signals)-len(new_signals)} 個重複）")
     else:
-        log.info("本輪無達標訊號")
+        log.info("本輪無新達標訊號")
 
     log.info(f"═══ 掃描完畢，共分析 {len(all_results)} 個幣 ═══")
 
