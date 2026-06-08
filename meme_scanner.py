@@ -1,10 +1,14 @@
 """
-LANA Meme Scanner v4.0 - 三大交易所全市場掃描 + 資金費率
-OKX（主力）+ Binance/Bybit（備援）+ Funding Rate 篩選
+LANA Meme Scanner v4.1 - Flask API + 背景排程
+- /api/meme_signals  → 前端土狗 tab 呼叫
+- /api/health        → 健康檢查
+- 每15分鐘背景掃描一次，結果存記憶體
 """
-import os, logging, requests
+import os, logging, requests, threading, time, json
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
+from flask import Flask, jsonify
+from flask_cors import CORS
 from exchanges import get_all_klines
 from indicators import calc_indicators
 from ai_analysis import analyze_coin
@@ -18,18 +22,53 @@ MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "70"))
 MIN_CHANGE  = float(os.getenv("MIN_CHANGE_PCT", "3"))
 MIN_VOL     = float(os.getenv("MIN_VOLUME_USDT", "500000"))
 MAX_COINS   = int(os.getenv("MAX_COINS_TO_SCAN", "50"))
+SCAN_INTERVAL = int(os.getenv("SCAN_INTERVAL_MIN", "15"))
 
-# 主流幣列表（用較嚴格的資金費率邏輯）
 MAJORS  = {"BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","MATIC","LINK","UNI"}
 STABLES = {"USDT","USDC","BUSD","FDUSD","DAI","TUSD"}
 
-# 資金費率門檻
-FUNDING_EXTREME = 0.0005   # ±0.05%，超過這個才算異常
-FUNDING_STRONG  = 0.001    # ±0.1%，非常強烈訊號
+FUNDING_EXTREME = 0.0005
+FUNDING_STRONG  = 0.001
 
+# ── 記憶體快取 ──────────────────────────────────────────────
+_cache = {
+    "signals":    [],       # 本輪所有分析結果（不限分數）
+    "top_signals": [],      # 達標訊號（score >= MIN_SCORE）
+    "last_scan":  None,
+    "scan_count": 0,
+}
+_cache_lock = threading.Lock()
+
+# ── Flask ────────────────────────────────────────────────────
+app = Flask(__name__)
+CORS(app)
+
+@app.route("/api/meme_signals")
+def api_meme_signals():
+    with _cache_lock:
+        return jsonify({
+            "signals":    _cache["signals"],
+            "last_scan":  _cache["last_scan"],
+            "scan_count": _cache["scan_count"],
+        })
+
+@app.route("/api/health")
+def api_health():
+    with _cache_lock:
+        return jsonify({
+            "status": "ok",
+            "last_scan": _cache["last_scan"],
+            "scan_count": _cache["scan_count"],
+            "signal_count": len(_cache["signals"]),
+        })
+
+@app.route("/")
+def index():
+    return "LANA Meme Scanner v4.1 OK"
+
+# ── 掃描邏輯（原 main）────────────────────────────────────────
 
 def fetch_funding_rates() -> dict:
-    """抓 OKX 資金費率（Railway 可用）"""
     rates = {}
     try:
         r = requests.get("https://www.okx.com/api/v5/public/funding-rate?instType=SWAP", timeout=10)
@@ -48,7 +87,6 @@ def fetch_funding_rates() -> dict:
 
 
 def fetch_okx() -> list:
-    """OKX 合約市場（Railway 主力來源）"""
     try:
         r = requests.get("https://www.okx.com/api/v5/market/tickers?instType=SWAP", timeout=10)
         out = []
@@ -121,117 +159,127 @@ def fetch_bybit() -> list:
 
 
 def get_best_candidates(funding_rates: dict) -> list:
-    """合併三大交易所候選幣，加入資金費率強制納入邏輯"""
     all_coins = fetch_okx() + fetch_binance() + fetch_bybit()
-
-    # 每個幣只保留漲幅最高的交易所
     best = {}
     for coin, chg, exchange in all_coins:
         if coin not in best or chg > best[coin][0]:
             best[coin] = (chg, exchange)
-
-    # 資金費率極端的幣強制納入（不管漲幅）
     for coin, rate in funding_rates.items():
         if abs(rate) >= FUNDING_EXTREME and coin not in STABLES:
             if coin not in best:
-                best[coin] = (0, "okx")  # 資金費率強制加入
-
-    # 排序：優先資金費率異常，其次漲幅
+                best[coin] = (0, "okx")
     def sort_key(item):
         coin, (chg, _) = item
         fr = abs(funding_rates.get(coin, 0))
         fr_score = 2 if fr >= FUNDING_STRONG else 1 if fr >= FUNDING_EXTREME else 0
         return (fr_score, chg)
-
     sorted_coins = sorted(best.items(), key=sort_key, reverse=True)
     result = [(coin, exchange) for coin, (chg, exchange) in sorted_coins[:MAX_COINS]]
-
     log.info(f"最終掃描 {len(result)} 個幣種")
     return result
 
 
-def main():
-    log.info("═══ LANA Meme Scanner v4.0 資金費率強化版 ═══")
-
-    # 先抓資金費率
+def run_scan():
+    log.info("═══ LANA Meme Scanner v4.1 開始掃描 ═══")
     funding_rates = fetch_funding_rates()
-
     candidates = get_best_candidates(funding_rates)
-    signals = []
+    all_results = []
+    top_signals = []
 
     for coin, exchange in candidates:
         try:
             k1h  = get_all_klines(coin, exchange, "1h",  100)
             k15m = get_all_klines(coin, exchange, "15m", 100)
             k4h  = get_all_klines(coin, exchange, "4h",  50)
-
             if not k1h or not k15m:
                 log.warning(f"[{exchange}] {coin} 無資料，跳過")
                 continue
-
             ind = calc_indicators(k1h, k15m, k4h)
-            ind["funding_rate"] = funding_rates.get(coin, 0)  # 注入資金費率
+            ind["funding_rate"] = funding_rates.get(coin, 0)
             res = analyze_coin(coin, exchange, ind)
+            if not res:
+                continue
 
-            if res:
-                score     = res.get("score", 0)
-                direction = res.get("direction", "WATCH")
-                fr        = funding_rates.get(coin, 0)
+            score     = res.get("score", 0)
+            direction = res.get("direction", "WATCH")
+            fr        = funding_rates.get(coin, 0)
 
-                # 主流幣：需要資金費率異常 OR RSI 極端才推
-                if coin in MAJORS:
-                    rsi_1h = ind.get("rsi_1h", 50)
-                    fr_ok  = abs(fr) >= FUNDING_EXTREME
-                    rsi_ok = rsi_1h >= 72 or rsi_1h <= 28
-                    if not (fr_ok or rsi_ok):
-                        log.info(f"[{exchange}] {coin} 主流幣條件不足（FR:{fr:.4f} RSI:{rsi_1h:.0f}），跳過")
-                        continue
+            if coin in MAJORS:
+                rsi_1h = ind.get("rsi_1h", 50)
+                if not (abs(fr) >= FUNDING_EXTREME or rsi_1h >= 72 or rsi_1h <= 28):
+                    log.info(f"[{exchange}] {coin} 主流幣條件不足（FR:{fr:.4f} RSI:{rsi_1h:.0f}），跳過")
+                    continue
 
-                # 加入資金費率資訊
-                res["funding_rate"] = fr
-                res["is_major"]     = coin in MAJORS
-                res["price"]        = ind.get("price", 0)
-                res["change_24h"]   = ind.get("change_24h", ind.get("price_change_24h", 0))
-                res["vol_ratio"]    = ind.get("vol_ratio", 1.0)
-                res["rsi_1h"]       = ind.get("rsi_1h", 50)
+            res["funding_rate"] = fr
+            res["is_major"]     = coin in MAJORS
+            res["price"]        = ind.get("price", 0)
+            res["change_24h"]   = ind.get("change_24h", ind.get("price_change_24h", 0))
+            res["vol_ratio"]    = ind.get("vol_ratio", 1.0)
+            res["rsi_1h"]       = ind.get("rsi_1h", 50)
 
-                # 價格備援：AI 給 0/None/文字時，用現價自動計算
-                p = res["price"]
-                def _fix_price(val, default):
-                    try:
-                        v = float(val)
-                        return v if v > 0 else default
-                    except:
-                        return default
+            p = res["price"]
+            def _fix_price(val, default):
+                try:
+                    v = float(val)
+                    return v if v > 0 else default
+                except:
+                    return default
 
-                if p > 0:
-                    direction = res.get("direction", "WATCH")
-                    if direction == "SHORT":
-                        res["stop_loss"] = _fix_price(res.get("stop_loss"), round(p * 1.03, 6))
-                        res["target_1"]  = _fix_price(res.get("target_1"),  round(p * 0.96, 6))
-                        res["target_2"]  = _fix_price(res.get("target_2"),  round(p * 0.92, 6))
-                    else:  # LONG or WATCH
-                        res["stop_loss"] = _fix_price(res.get("stop_loss"), round(p * 0.97, 6))
-                        res["target_1"]  = _fix_price(res.get("target_1"),  round(p * 1.04, 6))
-                        res["target_2"]  = _fix_price(res.get("target_2"),  round(p * 1.08, 6))
+            if p > 0:
+                if direction == "SHORT":
+                    res["stop_loss"] = _fix_price(res.get("stop_loss"), round(p * 1.03, 4))
+                    res["target_1"]  = _fix_price(res.get("target_1"),  round(p * 0.96, 4))
+                    res["target_2"]  = _fix_price(res.get("target_2"),  round(p * 0.92, 4))
+                else:
+                    res["stop_loss"] = _fix_price(res.get("stop_loss"), round(p * 0.97, 4))
+                    res["target_1"]  = _fix_price(res.get("target_1"),  round(p * 1.04, 4))
+                    res["target_2"]  = _fix_price(res.get("target_2"),  round(p * 1.08, 4))
 
-                log.info(f"[{exchange}] {coin} → {direction} {score}分 FR:{fr:.4f}")
-                # score >= MIN_SCORE (預設70) 且只推 LONG/SHORT
-                if score >= MIN_SCORE and direction in ("LONG", "SHORT"):
-                    signals.append(res)
+            log.info(f"[{exchange}] {coin} → {direction} {score}分 FR:{fr:.4f}")
+            all_results.append(res)
+
+            if score >= MIN_SCORE and direction in ("LONG", "SHORT"):
+                top_signals.append(res)
 
         except Exception as e:
             log.error(f"[{exchange}] {coin} 出錯: {e}")
 
-    if signals:
-        signals.sort(key=lambda x: x["score"], reverse=True)
-        send_telegram(signals)
-        log.info(f"📨 推播 {len(signals)} 個訊號")
+    # 排序
+    all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+    top_signals.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+    # 更新快取
+    now_str = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
+    with _cache_lock:
+        _cache["signals"]     = all_results
+        _cache["top_signals"] = top_signals
+        _cache["last_scan"]   = now_str
+        _cache["scan_count"] += 1
+
+    # 推 Telegram
+    if top_signals:
+        send_telegram(top_signals)
+        log.info(f"📨 推播 {len(top_signals)} 個訊號")
     else:
         log.info("本輪無達標訊號")
 
-    log.info("═══ 掃描完畢 ═══")
+    log.info(f"═══ 掃描完畢，共分析 {len(all_results)} 個幣 ═══")
+
+
+def background_scheduler():
+    """每 SCAN_INTERVAL 分鐘跑一次"""
+    # 啟動後立刻跑一次
+    time.sleep(5)
+    run_scan()
+    while True:
+        time.sleep(SCAN_INTERVAL * 60)
+        run_scan()
 
 
 if __name__ == "__main__":
-    main()
+    port = int(os.getenv("PORT", 8080))
+    # 背景排程
+    t = threading.Thread(target=background_scheduler, daemon=True)
+    t.start()
+    # Flask 主程式
+    app.run(host="0.0.0.0", port=port)
