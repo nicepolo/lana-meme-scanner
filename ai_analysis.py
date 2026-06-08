@@ -1,45 +1,40 @@
 """
-ai_analysis.py - 統一評分版
-- LANA Score 計算邏輯與網頁完全一致
-- AI 只負責寫分析摘要文字，不決定分數
-- AI 失敗時用規則式摘要，分數不受影響
+ai_analysis.py - 純規則式版本（零 AI API 費用）
+- 分數完全由技術指標決定（MA排列、RSI、BB、量能、資金費率）
+- 說明文字由規則自動生成，穩定不受 AI 服務影響
+- 深度分析頁的 AI 功能另外保留，不受影響
 """
-import os, json, logging, requests
+import os, logging
 log = logging.getLogger(__name__)
 
-GEMINI_KEY    = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
-ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+def _calc_lana_score(indicators: dict) -> tuple:
+    """技術指標評分，與 lana-monitor 標準一致，回傳 (score, bb_zone)"""
+    rsi  = indicators.get("rsi_1h", 50)
+    vr   = indicators.get("vol_ratio", indicators.get("vol_ratio_1h", 1.0))
+    fr   = indicators.get("funding_rate", 0)
 
-def _calc_lana_score(indicators: dict) -> tuple[int, str]:
-    """
-    與網頁 calc_lana_score 完全一致的評分邏輯（使用 MA 排列判斷趨勢）
-    回傳 (score, bb_zone)
-    """
-    rsi   = indicators.get("rsi_1h", 50)
-    vr    = indicators.get("vol_ratio", indicators.get("vol_ratio_1h", 1.0))
-    fr    = indicators.get("funding_rate", 0)
-
-    # BB 位置：優先用 bb_1h dict，備用 bb_position float
+    # BB 位置
     bb_data = indicators.get("bb_1h", {})
     if isinstance(bb_data, dict):
-        bb = bb_data.get("pct_b", 0.5)
+        bb      = bb_data.get("pct_b", 0.5)
+        bb_zone = bb_data.get("position", "middle")
     else:
-        bb = indicators.get("bb_position", 0.5)
+        bb      = indicators.get("bb_position", 0.5)
+        bb_zone = "lower_half" if bb < 0.5 else "upper_half"
 
-    # ── 趨勢 25分：用 MA7/MA25/MA99 排列（對齊 lana-monitor MA7/MA30/MA120）──
+    # ── 趨勢 25分：MA排列 ──
     ma7  = indicators.get("ma7_1h")
     ma25 = indicators.get("ma25_1h")
     ma99 = indicators.get("ma99_1h")
-    price = indicators.get("price", 0)
     if ma7 and ma25 and ma99 and ma7 > ma25 > ma99:
-        s_trend = 25   # 多頭排列
+        s_trend = 25
     elif ma7 and ma25 and ma7 > ma25:
-        s_trend = 15   # 短線偏多
+        s_trend = 15
     elif ma7 and ma25 and ma7 < ma25:
-        s_trend = 0    # 空頭排列
+        s_trend = 0
     else:
-        s_trend = 5    # 資料不足
+        s_trend = 5
 
     # ── RSI 20分 ──
     if rsi is None:          s_rsi = 10
@@ -47,7 +42,7 @@ def _calc_lana_score(indicators: dict) -> tuple[int, str]:
     elif 40 <= rsi < 50:     s_rsi = 15
     elif 30 <= rsi < 40:     s_rsi = 10
     elif 70 <= rsi < 80:     s_rsi = 8
-    else:                    s_rsi = 0   # <30 或 >=80
+    else:                    s_rsi = 0
 
     # ── 量能 20分 ──
     if vr is None:   s_vol = 10
@@ -58,26 +53,20 @@ def _calc_lana_score(indicators: dict) -> tuple[int, str]:
     else:            s_vol = 0
 
     # ── BB位置 15分 ──
-    if bb < 0.5:     s_bb = 15   # 下半部（支撐）
-    elif bb <= 1.0:  s_bb = 8    # 上半部
-    else:            s_bb = 0    # 突破上軌（超買）
+    if bb < 0.3:     s_bb = 15
+    elif bb < 0.5:   s_bb = 12
+    elif bb <= 0.7:  s_bb = 8
+    elif bb <= 1.0:  s_bb = 4
+    else:            s_bb = 0
 
-    # ── 資金費率調整（替代風險分）20分 ──
-    if abs(fr) < 0.0001:     s_risk = 20   # 中性
+    # ── 資金費率 20分 ──
+    if abs(fr) < 0.0001:     s_risk = 20
     elif abs(fr) < 0.0005:   s_risk = 15
-    elif fr < -0.0005:       s_risk = 18   # 負費率，做多有利
-    elif fr > 0.001:         s_risk = 2    # 極端正費率，多頭擁擠
+    elif fr < -0.0005:       s_risk = 18
+    elif fr > 0.001:         s_risk = 2
     else:                    s_risk = 8
 
-    score = s_trend + s_rsi + s_vol + s_bb + s_risk
-    score = max(0, min(100, score))
-
-    # BB區間描述
-    if bb > 1.0:    bb_zone = "above_upper"
-    elif bb > 0.5:  bb_zone = "upper_half"
-    elif bb >= 0:   bb_zone = "lower_half"
-    else:           bb_zone = "below_lower"
-
+    score = max(0, min(100, s_trend + s_rsi + s_vol + s_bb + s_risk))
     return score, bb_zone
 
 
@@ -86,102 +75,129 @@ def _get_direction(score: int, indicators: dict) -> str:
     fr   = indicators.get("funding_rate", 0)
     ma7  = indicators.get("ma7_1h")
     ma25 = indicators.get("ma25_1h")
-    ma99 = indicators.get("ma99_1h")
-
-    # 判斷趨勢方向
-    if ma7 and ma25 and ma7 > ma25:
-        trend_up = True
-    else:
-        trend_up = False
+    trend_up = bool(ma7 and ma25 and ma7 > ma25)
 
     if score >= 70 and trend_up and rsi < 72:
         return "LONG"
     elif rsi > 75 or (fr > 0.001 and not trend_up):
         return "SHORT"
-    elif score < 50:
-        return "WATCH"
     else:
-        return "WATCH"  # 分數不足或趨勢不明，一律觀望
+        return "WATCH"
 
 
-def _build_summary_prompt(symbol: str, exchange: str, indicators: dict, score: int, direction: str) -> str:
+def _build_summary(symbol: str, score: int, direction: str, indicators: dict, bb_zone: str) -> dict:
+    """純規則生成摘要文字，零 API 費用"""
     rsi   = indicators.get("rsi_1h", 50)
-    vr    = indicators.get("vol_ratio", 1.0)
-    trend = indicators.get("trend", "neutral")
-    bb    = indicators.get("bb_position", 0.5)
-    chg   = indicators.get("change_24h", 0)
+    vr    = indicators.get("vol_ratio", indicators.get("vol_ratio_1h", 1.0))
     fr    = indicators.get("funding_rate", 0)
+    chg   = indicators.get("change_24h", indicators.get("price_change_24h", 0))
     price = indicators.get("price", 0)
+    ma7   = indicators.get("ma7_1h")
+    ma25  = indicators.get("ma25_1h")
+    ma99  = indicators.get("ma99_1h")
 
-    return f"""你是加密貨幣交易員，請根據以下數據寫一段簡短分析（繁體中文）。
+    # 趨勢描述
+    if ma7 and ma25 and ma99 and ma7 > ma25 > ma99:
+        trend_txt = "MA多頭排列強勢"
+    elif ma7 and ma25 and ma7 > ma25:
+        trend_txt = "短線MA偏多"
+    else:
+        trend_txt = "MA偏空或整理"
 
-幣種：{symbol}（{exchange}）現價：{price}
-LANA評分：{score}/100  方向建議：{direction}
-RSI 1H={rsi:.0f} | 量能={vr:.1f}x | 趨勢={trend} | BB位置={bb:.2f} | 24H={chg:+.1f}% | FR={fr:+.4f}
+    # RSI 描述
+    if rsi >= 70:   rsi_txt = f"RSI={rsi:.0f}超買注意回調"
+    elif rsi >= 55: rsi_txt = f"RSI={rsi:.0f}中位偏強"
+    elif rsi >= 45: rsi_txt = f"RSI={rsi:.0f}中性整理"
+    elif rsi >= 30: rsi_txt = f"RSI={rsi:.0f}偏弱有反彈機會"
+    else:           rsi_txt = f"RSI={rsi:.0f}超賣反彈訊號"
 
-請只回傳JSON，不要其他文字：
-{{"summary":"一句話點出最關鍵的訊號（15字內）","reason":"列出2-3個具體數據支撐","risk_note":"最主要的一個風險","timeframe":"建議持倉時間如4-8小時","entry_zone":"{round(price*0.995,4)}-{round(price*1.005,4)}","stop_loss":{round(price*0.97,4)},"target_1":{round(price*1.04,4)},"target_2":{round(price*1.08,4)}}}"""
+    # 量能描述
+    if vr >= 2.0:   vol_txt = f"量能{vr:.1f}x放量強勁"
+    elif vr >= 1.5: vol_txt = f"量能{vr:.1f}x溫和放量"
+    elif vr >= 1.0: vol_txt = f"量能{vr:.1f}x平穩"
+    else:           vol_txt = f"量能{vr:.1f}x偏弱"
 
+    # BB 描述
+    bb_map = {
+        "below_lower": "價格跌破布林下軌",
+        "lower_half":  "布林下軌支撐區",
+        "upper_half":  "布林上半部",
+        "above_upper": "突破布林上軌超買",
+    }
+    bb_txt = bb_map.get(bb_zone, "布林中軌附近")
 
-def _call_gemini(symbol: str, prompt: str) -> dict | None:
-    if not GEMINI_KEY:
-        return None
-    try:
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-        r = requests.post(url,
-            headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY},
-            json={"contents": [{"parts": [{"text": prompt}]}],
-                  "generationConfig": {"temperature": 0.2, "maxOutputTokens": 500}},
-            timeout=15)
-        if not r.ok:
-            return None
-        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        text = text.strip().replace("```json","").replace("```","").strip()
-        return json.loads(text)
-    except Exception as e:
-        log.error(f"Gemini 失敗 {symbol}: {e}")
-        return None
+    # 資金費率
+    if fr > 0.001:    fr_txt = "資金費率極高多頭擁擠"
+    elif fr < -0.001: fr_txt = "負費率空頭擁擠反指標"
+    elif abs(fr) < 0.0001: fr_txt = ""
+    else:             fr_txt = f"FR={fr*100:+.3f}%"
 
+    # 組裝 summary（一句話）
+    if direction == "LONG":
+        if score >= 85:
+            summary = f"{trend_txt}，{rsi_txt}，強力做多機會"
+        elif score >= 70:
+            summary = f"{trend_txt}，{rsi_txt}，{vol_txt}"
+        else:
+            summary = f"看多但需確認，{vol_txt}"
+    elif direction == "SHORT":
+        summary = f"做空訊號，{rsi_txt}，{bb_txt}"
+    else:
+        summary = f"觀望整理，{trend_txt}，{vol_txt}"
 
-def _call_claude(symbol: str, prompt: str) -> dict | None:
-    if not ANTHROPIC_KEY:
-        return None
-    try:
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5", "max_tokens": 300,
-                  "messages": [{"role": "user", "content": prompt}]},
-            timeout=15)
-        if not r.ok:
-            return None
-        text = r.json()["content"][0]["text"]
-        text = text.strip().replace("```json","").replace("```","").strip()
-        return json.loads(text)
-    except Exception as e:
-        log.error(f"Claude 失敗 {symbol}: {e}")
-        return None
+    # reason（2-3個數據點）
+    reasons = [rsi_txt, bb_txt, vol_txt]
+    if fr_txt:
+        reasons.append(fr_txt)
+    if chg != 0:
+        reasons.append(f"24H{chg:+.1f}%")
+    reason = "；".join(reasons[:3])
+
+    # risk_note
+    if rsi >= 70:
+        risk_note = f"RSI已進入超買區（>{70}臨界值），短期回調風險較大"
+    elif vr < 1.0:
+        risk_note = f"量能僅{vr:.1f}x偏弱，突破乏力風險，需等待成交量配合"
+    elif fr > 0.0005:
+        risk_note = f"資金費率偏高，多頭持倉成本上升，注意被擠壓"
+    elif bb_zone == "above_upper":
+        risk_note = "價格突破布林上軌，短線超買，謹防假突破"
+    else:
+        risk_note = "嚴控倉位，設好止損，單筆不超 3-5%"
+
+    # 入場/止損/目標
+    if price > 0:
+        if direction == "SHORT":
+            entry  = f"{round(price*1.002,4)}-{round(price*1.008,4)}"
+            sl     = round(price * 1.03, 4)
+            t1     = round(price * 0.96, 4)
+            t2     = round(price * 0.92, 4)
+        else:
+            entry  = f"{round(price*0.993,4)}-{round(price*1.005,4)}"
+            sl     = round(price * 0.97, 4)
+            t1     = round(price * 1.04, 4)
+            t2     = round(price * 1.08, 4)
+    else:
+        entry, sl, t1, t2 = "N/A", "N/A", "N/A", "N/A"
+
+    return {
+        "summary":    summary,
+        "reason":     reason,
+        "risk_note":  risk_note,
+        "timeframe":  "4-8小時",
+        "entry_zone": entry,
+        "stop_loss":  sl,
+        "target_1":   t1,
+        "target_2":   t2,
+    }
 
 
 def analyze_coin(symbol: str, exchange: str, indicators: dict) -> dict | None:
-    # 1. 用統一規則算分（跟網頁一致）
     score, bb_zone = _calc_lana_score(indicators)
     direction      = _get_direction(score, indicators)
+    conf           = "高" if score >= 70 else "中" if score >= 50 else "低"
 
-    price = indicators.get("price", 0)
-    rsi   = indicators.get("rsi_1h", 50)
-    vr    = indicators.get("vol_ratio", 1.0)
-    trend = indicators.get("trend", "neutral")
-    fr    = indicators.get("funding_rate", 0)
-
-    # 2. 嘗試讓 AI 寫摘要（不決定分數）
-    ai_data = None
-    if score >= 45:   # 只有可能達標的才花 API
-        prompt  = _build_summary_prompt(symbol, exchange, indicators, score, direction)
-        ai_data = _call_gemini(symbol, prompt) or _call_claude(symbol, prompt)
-
-    # 3. 組裝最終結果（分數永遠來自規則式）
-    conf = "高" if score >= 65 else "中" if score >= 45 else "低"
+    txt = _build_summary(symbol, score, direction, indicators, bb_zone)
 
     result = {
         "symbol":     symbol,
@@ -189,15 +205,8 @@ def analyze_coin(symbol: str, exchange: str, indicators: dict) -> dict | None:
         "direction":  direction,
         "score":      score,
         "confidence": conf,
-        "summary":    ai_data.get("summary", f"{direction} 訊號") if ai_data else f"規則式：{direction}",
-        "reason":     ai_data.get("reason",  f"RSI={rsi:.0f} 量能={vr:.1f}x 趨勢={trend}") if ai_data else f"RSI={rsi:.0f} 量能={vr:.1f}x 趨勢={trend} FR={fr:+.4f}",
-        "risk_note":  ai_data.get("risk_note", "嚴控倉位，設好止損") if ai_data else "嚴控倉位，設好止損",
-        "timeframe":  ai_data.get("timeframe", "4-8小時") if ai_data else "4-8小時",
-        "entry_zone": ai_data.get("entry_zone", f"{round(price*0.995,6)}-{round(price*1.005,6)}") if ai_data else f"{round(price*0.995,6)}-{round(price*1.005,6)}",
-        "stop_loss":  ai_data.get("stop_loss",  round(price*0.97, 6)) if ai_data else round(price*0.97, 6),
-        "target_1":   ai_data.get("target_1",   round(price*1.04, 6)) if ai_data else round(price*1.04, 6),
-        "target_2":   ai_data.get("target_2",   round(price*1.08, 6)) if ai_data else round(price*1.08, 6),
+        **txt,
     }
 
-    log.info(f"{'✅' if score>=65 else '📊'} {symbol}: {direction} {score}分 ({conf}信心) [{'AI' if ai_data else '規則式'}摘要]")
+    log.info(f"{'✅' if score>=70 else '📊'} {symbol}: {direction} {score}分 ({conf}信心) [規則式]")
     return result
