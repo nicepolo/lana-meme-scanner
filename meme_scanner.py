@@ -18,7 +18,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "70"))
+MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "76"))
 MIN_CHANGE  = float(os.getenv("MIN_CHANGE_PCT", "3"))
 MIN_VOL     = float(os.getenv("MIN_VOLUME_USDT", "500000"))
 MAX_COINS   = int(os.getenv("MAX_COINS_TO_SCAN", "50"))
@@ -280,28 +280,12 @@ def run_scan():
 
 
 def background_scheduler():
-    """
-    台北時間 03:00-07:00 → 每 120 分鐘跑一次（省資源）
-    其他時段 → 每 SCAN_INTERVAL 分鐘跑一次（預設 15 分鐘）
-    """
-    from datetime import datetime, timezone, timedelta
-    TZ_TAIPEI = timezone(timedelta(hours=8))
-
+    """每 SCAN_INTERVAL 分鐘跑一次"""
     # 啟動後立刻跑一次
     time.sleep(5)
     run_scan()
-
     while True:
-        now_tpe = datetime.now(TZ_TAIPEI)
-        hour = now_tpe.hour  # 台北時間小時
-
-        if 3 <= hour < 7:
-            interval_min = 120  # 凌晨 3-7 點每 2 小時
-        else:
-            interval_min = SCAN_INTERVAL  # 正常時段
-
-        log.info(f"下次掃描於 {interval_min} 分鐘後（台北時間 {now_tpe.strftime('%H:%M')}）")
-        time.sleep(interval_min * 60)
+        time.sleep(SCAN_INTERVAL * 60)
         run_scan()
 
 
