@@ -54,7 +54,7 @@ def get_all_klines(symbol: str, exchange: str, interval: str = "1h", limit: int 
 def _binance_klines(symbol: str, interval: str, limit: int):
     # 先試現貨
     try:
-        url = "https://api.binance.com/api/v3/klines"
+        url = "https://data-api.binance.vision/api/v3/klines"
         params = {"symbol": f"{symbol}USDT", "interval": interval, "limit": limit}
         r = requests.get(url, params=params, headers=HEADERS, proxies=PROXIES, timeout=10)
         r.raise_for_status()
