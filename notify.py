@@ -69,15 +69,31 @@ def _format_signal(idx: int, r: dict) -> str:
     score    = r.get("score", 0)
     vol      = r.get("vol_ratio", 1)
     rsi      = r.get("rsi_1h", 50)
+    fr       = r.get("funding_rate", None)
+    is_major = r.get("is_major", False)
+
+    # 資金費率顯示
+    if fr is not None:
+        fr_pct = fr * 100
+        if abs(fr) >= 0.001:
+            fr_str = f"  🔥 FR：{fr_pct:+.3f}%（極端）"
+        elif abs(fr) >= 0.0005:
+            fr_str = f"  ⚡ FR：{fr_pct:+.3f}%（異常）"
+        else:
+            fr_str = f"  FR：{fr_pct:+.3f}%"
+    else:
+        fr_str = ""
+
+    major_tag = " 🏦主流幣" if is_major else ""
 
     change_str = f"+{change}%" if change >= 0 else f"{change}%"
     change_icon = "📈" if change >= 0 else "📉"
 
     lines = [
-        f"{d_emoji} *#{idx} {symbol}/USDT* ({exchange})",
+        f"{d_emoji} *#{idx} {symbol}/USDT* ({exchange}){major_tag}",
         f"現價：`{price}`  {change_icon} 24h {change_str}",
         f"方向：{d_text}  {c_emoji} 信心：{conf}  訊號強度：{score}/100",
-        f"RSI 1H：{rsi}  量能：{vol}x",
+        f"RSI 1H：{rsi}  量能：{vol}x{fr_str}",
         "",
         f"📌 *{r.get('summary', '')}*",
         f"_{r.get('reason', '')}_",
