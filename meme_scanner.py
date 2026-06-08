@@ -280,12 +280,28 @@ def run_scan():
 
 
 def background_scheduler():
-    """每 SCAN_INTERVAL 分鐘跑一次"""
+    """
+    台北時間 03:00-07:00 → 每 120 分鐘跑一次（省資源）
+    其他時段 → 每 SCAN_INTERVAL 分鐘跑一次（預設 15 分鐘）
+    """
+    from datetime import datetime, timezone, timedelta
+    TZ_TAIPEI = timezone(timedelta(hours=8))
+
     # 啟動後立刻跑一次
     time.sleep(5)
     run_scan()
+
     while True:
-        time.sleep(SCAN_INTERVAL * 60)
+        now_tpe = datetime.now(TZ_TAIPEI)
+        hour = now_tpe.hour  # 台北時間小時
+
+        if 3 <= hour < 7:
+            interval_min = 120  # 凌晨 3-7 點每 2 小時
+        else:
+            interval_min = SCAN_INTERVAL  # 正常時段
+
+        log.info(f"下次掃描於 {interval_min} 分鐘後（台北時間 {now_tpe.strftime('%H:%M')}）")
+        time.sleep(interval_min * 60)
         run_scan()
 
 
