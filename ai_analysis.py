@@ -94,14 +94,14 @@ def _get_direction(score: int, indicators: dict) -> str:
     else:
         trend_up = False
 
-    if score >= 65 and trend_up and rsi < 72:
+    if score >= 70 and trend_up and rsi < 72:
         return "LONG"
     elif rsi > 75 or (fr > 0.001 and not trend_up):
         return "SHORT"
-    elif score < 45:
+    elif score < 50:
         return "WATCH"
     else:
-        return "LONG" if trend_up else "WATCH"
+        return "WATCH"  # 分數不足或趨勢不明，一律觀望
 
 
 def _build_summary_prompt(symbol: str, exchange: str, indicators: dict, score: int, direction: str) -> str:
