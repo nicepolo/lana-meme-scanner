@@ -190,6 +190,10 @@ def main():
                 # 加入資金費率資訊
                 res["funding_rate"] = fr
                 res["is_major"]     = coin in MAJORS
+                res["price"]        = ind.get("price", 0)
+                res["change_24h"]   = ind.get("change_24h", ind.get("price_change_24h", 0))
+                res["vol_ratio"]    = ind.get("vol_ratio", 1.0)
+                res["rsi_1h"]       = ind.get("rsi_1h", 50)
 
                 log.info(f"[{exchange}] {coin} → {direction} {score}分 FR:{fr:.4f}")
                 if score >= MIN_SCORE:
