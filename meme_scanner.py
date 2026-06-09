@@ -242,22 +242,34 @@ def run_scan():
             log.info(f"[{exchange}] {coin} → {direction} {score}分 FR:{fr:.4f}")
             all_results.append(res)
 
-            # ── 硬性排除條件（不管分數多高）──
+            # ── 硬性排除條件（雙向）──
             vol_ratio = res.get("vol_ratio", 1.0) or 1.0
-            chg_24h   = abs(res.get("change_24h", 0) or 0)
+            chg_24h   = res.get("change_24h", 0) or 0
             rsi_val   = res.get("rsi_1h", 50) or 50
+            skip = False
 
+            # 量能不足：多空都排除
             if vol_ratio < 0.5:
-                log.info(f"[排除] {coin} 量能{vol_ratio:.1f}x 過低，跳過")
-                continue
-            if chg_24h < 1.0:
-                log.info(f"[排除] {coin} 24H漲幅{chg_24h:.1f}% 動能不足，跳過")
-                continue
-            if rsi_val > 78:
-                log.info(f"[排除] {coin} RSI={rsi_val:.0f} 超買過熱，跳過")
-                continue
+                log.info(f"[排除] {coin} 量能{vol_ratio:.1f}x 不足")
+                skip = True
 
-            if score >= MIN_SCORE and direction in ("LONG", "SHORT"):
+            if not skip and direction == "LONG":
+                if chg_24h < 1.0:
+                    log.info(f"[排除] {coin} 做多但24H漲幅{chg_24h:.1f}%不足")
+                    skip = True
+                elif rsi_val > 78:
+                    log.info(f"[排除] {coin} 做多但RSI={rsi_val:.0f}超買")
+                    skip = True
+
+            if not skip and direction == "SHORT":
+                if chg_24h > -1.0:
+                    log.info(f"[排除] {coin} 做空但24H漲幅{chg_24h:.1f}%下跌動能不足")
+                    skip = True
+                elif rsi_val < 25:
+                    log.info(f"[排除] {coin} 做空但RSI={rsi_val:.0f}超賣避免追空")
+                    skip = True
+
+            if not skip and score >= MIN_SCORE and direction in ("LONG", "SHORT"):
                 top_signals.append(res)
 
         except Exception as e:
