@@ -243,29 +243,35 @@ def run_scan():
             all_results.append(res)
 
             # ── 硬性排除條件（雙向）──
-            vol_ratio = res.get("vol_ratio", 1.0) or 1.0
-            chg_24h   = res.get("change_24h", 0) or 0
-            rsi_val   = res.get("rsi_1h", 50) or 50
+            # 注意：不用 or 預設值，避免 0 被轉成 1.0
+            vol_ratio = res.get("vol_ratio")
+            vol_ratio = float(vol_ratio) if vol_ratio is not None else None
+            chg_24h   = res.get("change_24h", 0)
+            chg_24h   = float(chg_24h) if chg_24h is not None else 0.0
+            rsi_val   = res.get("rsi_1h", 50)
+            rsi_val   = float(rsi_val) if rsi_val is not None else 50.0
             skip = False
 
-            # 量能不足：多空都排除
-            if vol_ratio < 0.5:
-                log.info(f"[排除] {coin} 量能{vol_ratio:.1f}x 不足")
+            # 量能不足：多空都排除（vol_ratio 是 None 代表資料缺失也排除）
+            if vol_ratio is None or vol_ratio < 0.8:
+                log.info(f"[排除] {coin} 量能{vol_ratio}x 不足（門檻0.8x）")
                 skip = True
 
             if not skip and direction == "LONG":
-                if chg_24h < 1.0:
-                    log.info(f"[排除] {coin} 做多但24H漲幅{chg_24h:.1f}%不足")
+                # 做多：需要上漲動能
+                if chg_24h < 1.5:
+                    log.info(f"[排除] {coin} 做多但24H漲幅{chg_24h:.1f}%不足（門檻+1.5%）")
                     skip = True
-                elif rsi_val > 78:
-                    log.info(f"[排除] {coin} 做多但RSI={rsi_val:.0f}超買")
+                elif rsi_val > 75:
+                    log.info(f"[排除] {coin} 做多但RSI={rsi_val:.0f}超買（門檻75）")
                     skip = True
 
             if not skip and direction == "SHORT":
-                if chg_24h > -1.0:
-                    log.info(f"[排除] {coin} 做空但24H漲幅{chg_24h:.1f}%下跌動能不足")
+                # 做空：需要下跌動能
+                if chg_24h > -1.5:
+                    log.info(f"[排除] {coin} 做空但24H漲幅{chg_24h:.1f}%下跌動能不足（門檻-1.5%）")
                     skip = True
-                elif rsi_val < 25:
+                elif rsi_val < 28:
                     log.info(f"[排除] {coin} 做空但RSI={rsi_val:.0f}超賣避免追空")
                     skip = True
 
