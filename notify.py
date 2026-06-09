@@ -45,26 +45,30 @@ _last_push_time = 0.0
 
 def send_telegram(results: list):
     """批次推送所有達標訊號到 Telegram（含防重複機制）"""
-    global _last_push_hash, _last_push_time
-    import time, hashlib
+    import time, hashlib, os, json as _json
 
     if not BOT_TOKEN or not CHAT_ID:
         log.warning("Telegram 憑證缺失，跳過推送")
         return
 
-    # 計算本輪訊號指紋（symbol+score 組合）
+    # 用檔案鎖防重複（跨 process 有效，解決 Railway 雙 instance 問題）
     fingerprint = hashlib.md5(
         ",".join(f"{r.get('symbol')}:{r.get('score')}" for r in results).encode()
     ).hexdigest()
-
+    lock_file = "/tmp/lana_last_push.json"
     now_ts = time.time()
-    # 同樣的訊號在 10 分鐘內不重複推
-    if fingerprint == _last_push_hash and now_ts - _last_push_time < 600:
-        log.warning(f"⛔ 偵測到重複推送（指紋相同），略過本輪")
-        return
-
-    _last_push_hash = fingerprint
-    _last_push_time = now_ts
+    if os.path.exists(lock_file):
+        try:
+            data = _json.loads(open(lock_file).read())
+            if data.get("fp") == fingerprint and now_ts - data.get("ts", 0) < 600:
+                log.warning("⛔ 10分鐘內相同訊號已推送（檔案鎖），略過")
+                return
+        except:
+            pass
+    try:
+        open(lock_file, "w").write(_json.dumps({"fp": fingerprint, "ts": now_ts}))
+    except:
+        pass
 
     now = datetime.now(TZ_TAIPEI).strftime("%Y-%m-%d %H:%M")
     header = f"🐕 *LANA Meme Scanner* | {now}\n"
