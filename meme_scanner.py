@@ -70,6 +70,14 @@ def api_health():
 def index():
     return "LANA Meme Scanner v4.1 OK"
 
+@app.route("/api/trigger_scan", methods=["POST", "GET"])
+def api_trigger_scan():
+    """Railway Cron Job 呼叫此端點觸發掃描（解決雙 instance 重複推送）"""
+    import threading
+    t = threading.Thread(target=run_scan, daemon=True)
+    t.start()
+    return {"status": "triggered", "ts": datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")}
+
 # ── 掃描邏輯（原 main）────────────────────────────────────────
 
 def fetch_funding_rates() -> dict:
@@ -354,14 +362,15 @@ def run_scan():
 
 def background_scheduler():
     """
-    台北時間 03:00-07:00 → 每 120 分鐘跑一次
-    其他時段 → 每 SCAN_INTERVAL 分鐘跑一次（預設 15 分鐘）
-    等到下一個整15分鐘才跑第一次，避免重部署連續觸發
+    保留備用排程（USE_CRON=true 時停用，改由 Railway Cron Job 觸發）
     """
+    use_cron = os.getenv("USE_CRON", "false").lower() == "true"
+    if use_cron:
+        log.info("USE_CRON=true，背景排程停用，等待 /api/trigger_scan 觸發")
+        return
+
     from datetime import datetime, timezone, timedelta
     TZ_TAIPEI = timezone(timedelta(hours=8))
-
-    # 等到下一個 :00/:15/:30/:45 再跑
     now = datetime.now(TZ_TAIPEI)
     m = now.minute
     s = now.second
@@ -369,7 +378,7 @@ def background_scheduler():
     elif m < 30: wait = (30 - m) * 60 - s
     elif m < 45: wait = (45 - m) * 60 - s
     else:        wait = (60 - m) * 60 - s
-    wait = max(60, wait)  # 至少等 60 秒
+    wait = max(60, wait)
     log.info(f"排程等待 {wait//60}分{wait%60}秒 後首次掃描（台北 {now.strftime('%H:%M')}）")
     time.sleep(wait)
     run_scan()
