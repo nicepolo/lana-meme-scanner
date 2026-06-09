@@ -287,23 +287,35 @@ def run_scan():
         _cache["last_scan"]   = now_str
         _cache["scan_count"] += 1
 
-    # 推 Telegram（按分數高到低排序，去重）
+    # 推 Telegram（按分數高到低排序，本輪去重）
     global _last_alerted, _last_alerted_time
     now_ts = time.time()
-    cooldown = SCAN_INTERVAL * 60 * 2  # 同一幣需間隔 2 個掃描週期才能再推
+    cooldown = SCAN_INTERVAL * 60 * 2  # 同一幣需間隔 2 個掃描週期（30分鐘）才能再推
     top_signals.sort(key=lambda x: x.get("score", 0), reverse=True)
-    new_signals = []
+
+    # 本輪去重：symbol 只推一次
+    seen = set()
+    deduped = []
     for s in top_signals:
+        sym = s.get("symbol")
+        if sym not in seen:
+            seen.add(sym)
+            deduped.append(s)
+
+    # 跨輪去重：冷卻期內不重複推
+    new_signals = []
+    for s in deduped:
         sym = s.get("symbol")
         last_t = _last_alerted.get(sym, 0)
         if now_ts - last_t >= cooldown:
             new_signals.append(s)
+
     if new_signals:
         send_telegram(new_signals)
         for s in new_signals:
             _last_alerted[s.get("symbol")] = now_ts
         _last_alerted_time = now_ts
-        log.info(f"📨 推播 {len(new_signals)} 個新訊號（略過 {len(top_signals)-len(new_signals)} 個冷卻中）")
+        log.info(f"📨 推播 {len(new_signals)} 個新訊號（略過 {len(deduped)-len(new_signals)} 個冷卻中）")
     else:
         log.info("本輪無新達標訊號（或全部在冷卻期）")
 
