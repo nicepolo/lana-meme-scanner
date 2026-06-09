@@ -39,11 +39,32 @@ def _conf_label(score: int) -> str:
         return "低信心 ⚠️"
 
 
+# 防重複推送：記錄最近一次推送的訊號指紋
+_last_push_hash = ""
+_last_push_time = 0.0
+
 def send_telegram(results: list):
-    """批次推送所有達標訊號到 Telegram"""
+    """批次推送所有達標訊號到 Telegram（含防重複機制）"""
+    global _last_push_hash, _last_push_time
+    import time, hashlib
+
     if not BOT_TOKEN or not CHAT_ID:
         log.warning("Telegram 憑證缺失，跳過推送")
         return
+
+    # 計算本輪訊號指紋（symbol+score 組合）
+    fingerprint = hashlib.md5(
+        ",".join(f"{r.get('symbol')}:{r.get('score')}" for r in results).encode()
+    ).hexdigest()
+
+    now_ts = time.time()
+    # 同樣的訊號在 10 分鐘內不重複推
+    if fingerprint == _last_push_hash and now_ts - _last_push_time < 600:
+        log.warning(f"⛔ 偵測到重複推送（指紋相同），略過本輪")
+        return
+
+    _last_push_hash = fingerprint
+    _last_push_time = now_ts
 
     now = datetime.now(TZ_TAIPEI).strftime("%Y-%m-%d %H:%M")
     header = f"🐕 *LANA Meme Scanner* | {now}\n"
