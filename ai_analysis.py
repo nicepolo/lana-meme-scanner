@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 def _calc_lana_score(indicators: dict) -> tuple:
     """技術指標評分，與 lana-monitor 標準一致，回傳 (score, bb_zone)"""
     rsi  = indicators.get("rsi_1h", 50)
-    vr   = indicators.get("vol_ratio", indicators.get("vol_ratio_1h", 1.0))
+    vr   = indicators.get("vol_ratio_1h", indicators.get("vol_ratio"))  # 優先用 1h 量比
     fr   = indicators.get("funding_rate", 0)
 
     # BB 位置
