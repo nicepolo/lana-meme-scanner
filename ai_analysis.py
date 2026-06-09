@@ -44,13 +44,14 @@ def _calc_lana_score(indicators: dict) -> tuple:
     elif 70 <= rsi < 80:     s_rsi = 8
     else:                    s_rsi = 0
 
-    # ── 量能 20分 ──
-    if vr is None:   s_vol = 10
-    elif vr >= 2.0:  s_vol = 20
-    elif vr >= 1.5:  s_vol = 16
-    elif vr >= 1.0:  s_vol = 12
-    elif vr >= 0.8:  s_vol = 6
-    else:            s_vol = 0
+    # ── 量能 20分（量能是信號可信度的關鍵）──
+    if vr is None:   s_vol = 0
+    elif vr >= 2.5:  s_vol = 20   # 強放量
+    elif vr >= 2.0:  s_vol = 18
+    elif vr >= 1.5:  s_vol = 14
+    elif vr >= 1.2:  s_vol = 10
+    elif vr >= 0.8:  s_vol = 4    # 偏弱
+    else:            s_vol = 0    # < 0.8 給 0 分
 
     # ── BB位置 15分 ──
     if bb < 0.3:     s_bb = 15
