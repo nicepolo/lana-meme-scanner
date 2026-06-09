@@ -218,7 +218,7 @@ def run_scan():
             res["is_major"]     = coin in MAJORS
             res["price"]        = ind.get("price", 0)
             res["change_24h"]   = ind.get("change_24h", ind.get("price_change_24h", 0))
-            res["vol_ratio"]    = ind.get("vol_ratio", 1.0)
+            res["vol_ratio"]    = ind.get("vol_ratio_1h", ind.get("vol_ratio"))
             res["rsi_1h"]       = ind.get("rsi_1h", 50)
 
             p = res["price"]
