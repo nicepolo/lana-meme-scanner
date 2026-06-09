@@ -75,11 +75,14 @@ def _get_direction(score: int, indicators: dict) -> str:
     fr   = indicators.get("funding_rate", 0)
     ma7  = indicators.get("ma7_1h")
     ma25 = indicators.get("ma25_1h")
-    trend_up = bool(ma7 and ma25 and ma7 > ma25)
+    ma99 = indicators.get("ma99_1h")
+    # 對齊 lana-monitor：三條均線全排才算真多頭
+    trend_full = bool(ma7 and ma25 and ma99 and ma7 > ma25 > ma99)
+    trend_mild = bool(ma7 and ma25 and ma7 > ma25)
 
-    if score >= 70 and trend_up and rsi < 72:
+    if score >= 70 and trend_full and rsi < 72:
         return "LONG"
-    elif rsi > 75 or (fr > 0.001 and not trend_up):
+    elif rsi > 75 or (fr > 0.001 and not trend_mild):
         return "SHORT"
     else:
         return "WATCH"
@@ -98,11 +101,11 @@ def _build_summary(symbol: str, score: int, direction: str, indicators: dict, bb
 
     # 趨勢描述
     if ma7 and ma25 and ma99 and ma7 > ma25 > ma99:
-        trend_txt = "MA多頭排列強勢"
+        trend_txt = "MA三線多頭排列"      # 對齊 lana-monitor 真多頭標準
     elif ma7 and ma25 and ma7 > ma25:
-        trend_txt = "短線MA偏多"
+        trend_txt = "短線偏多MA99未跟上"  # 假多頭，需謹慎
     else:
-        trend_txt = "MA偏空或整理"
+        trend_txt = "MA空頭或整理"
 
     # RSI 描述
     if rsi >= 70:   rsi_txt = f"RSI={rsi:.0f}超買注意回調"
