@@ -296,7 +296,7 @@ def run_scan():
     # 推 Telegram（按分數高到低排序，本輪去重）
     global _last_alerted, _last_alerted_time
     now_ts = time.time()
-    cooldown = SCAN_INTERVAL * 60 * 2  # 同一幣需間隔 2 個掃描週期（30分鐘）才能再推
+    cooldown = SCAN_INTERVAL * 60 * 2
     top_signals.sort(key=lambda x: x.get("score", 0), reverse=True)
 
     # 本輪去重：symbol 只推一次
@@ -317,11 +317,35 @@ def run_scan():
             new_signals.append(s)
 
     if new_signals:
-        send_telegram(new_signals)
-        for s in new_signals:
-            _last_alerted[s.get("symbol")] = now_ts
-        _last_alerted_time = now_ts
-        log.info(f"📨 推播 {len(new_signals)} 個新訊號（略過 {len(deduped)-len(new_signals)} 個冷卻中）")
+        # 跨 process 去重：查 Telegram 最後一條訊息時間
+        import requests as _req, hashlib
+        fingerprint = hashlib.md5(
+            ",".join(f"{s.get('symbol')}:{s.get('score')}" for s in new_signals).encode()
+        ).hexdigest()[:12]
+        try:
+            r = _req.get(
+                f"https://api.telegram.org/bot{os.getenv('TELEGRAM_BOT_TOKEN','')}/getUpdates",
+                params={"limit": 5, "offset": -5},
+                timeout=8
+            )
+            for update in r.json().get("result", []):
+                msg = update.get("message", {})
+                msg_text = msg.get("text", "")
+                msg_time = msg.get("date", 0)
+                # 如果 3 分鐘內有相同指紋的訊息，跳過
+                if fingerprint in msg_text and now_ts - msg_time < 180:
+                    log.warning(f"⛔ TG 已有相同訊號（指紋:{fingerprint}），略過重複推送")
+                    new_signals = []
+                    break
+        except Exception as e:
+            log.warning(f"TG 去重查詢失敗: {e}")
+
+        if new_signals:
+            send_telegram(new_signals)
+            for s in new_signals:
+                _last_alerted[s.get("symbol")] = now_ts
+            _last_alerted_time = now_ts
+            log.info(f"📨 推播 {len(new_signals)} 個新訊號")
     else:
         log.info("本輪無新達標訊號（或全部在冷卻期）")
 
