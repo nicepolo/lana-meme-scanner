@@ -40,15 +40,36 @@ def _conf_label(score: int) -> str:
 
 
 def send_telegram(results: list):
-    """批次推送所有達標訊號到 Telegram"""
-    import time, hashlib
+    """批次推送（header 帶指紋，推前查重）"""
+    import time, hashlib, requests as _req
 
     if not BOT_TOKEN or not CHAT_ID:
         log.warning("Telegram 憑證缺失，跳過推送")
         return
 
+    fingerprint = hashlib.md5(
+        ",".join(f"{r.get('symbol')}:{r.get('score')}" for r in results).encode()
+    ).hexdigest()[:10]
+    now_ts = time.time()
+
+    # 查頻道最近訊息，3分鐘內有相同指紋就跳過
+    try:
+        r = _req.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+            json={"limit": 10, "offset": -10},
+            timeout=8
+        )
+        for upd in r.json().get("result", []):
+            text = upd.get("channel_post", {}).get("text", "") or                    upd.get("message", {}).get("text", "")
+            date = upd.get("channel_post", {}).get("date", 0) or                    upd.get("message", {}).get("date", 0)
+            if fingerprint in text and now_ts - date < 180:
+                log.warning(f"⛔ 3分鐘內已推相同訊號({fingerprint})，略過")
+                return
+    except Exception as e:
+        log.warning(f"去重查詢失敗(繼續推送): {e}")
+
     now = datetime.now(TZ_TAIPEI).strftime("%Y-%m-%d %H:%M")
-    header = f"🐕 *LANA Meme Scanner* | {now}\n"
+    header = f"🐕 *LANA Meme Scanner* | {now} `#{fingerprint}`\n"
     header += f"共 {len(results)} 個訊號達標\n"
     header += "─" * 28
 
