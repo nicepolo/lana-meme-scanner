@@ -242,6 +242,21 @@ def run_scan():
             log.info(f"[{exchange}] {coin} → {direction} {score}分 FR:{fr:.4f}")
             all_results.append(res)
 
+            # ── 硬性排除條件（不管分數多高）──
+            vol_ratio = res.get("vol_ratio", 1.0) or 1.0
+            chg_24h   = abs(res.get("change_24h", 0) or 0)
+            rsi_val   = res.get("rsi_1h", 50) or 50
+
+            if vol_ratio < 0.5:
+                log.info(f"[排除] {coin} 量能{vol_ratio:.1f}x 過低，跳過")
+                continue
+            if chg_24h < 1.0:
+                log.info(f"[排除] {coin} 24H漲幅{chg_24h:.1f}% 動能不足，跳過")
+                continue
+            if rsi_val > 78:
+                log.info(f"[排除] {coin} RSI={rsi_val:.0f} 超買過熱，跳過")
+                continue
+
             if score >= MIN_SCORE and direction in ("LONG", "SHORT"):
                 top_signals.append(res)
 
