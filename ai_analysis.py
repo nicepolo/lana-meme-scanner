@@ -71,23 +71,70 @@ def _calc_lana_score(indicators: dict) -> tuple:
     return score, bb_zone
 
 
+def _calc_short_score(indicators: dict) -> int:
+    """空頭專屬評分（滿分100）"""
+    rsi  = indicators.get("rsi_1h", 50)
+    vr   = indicators.get("vol_ratio_1h", indicators.get("vol_ratio")) or 1.0
+    fr   = indicators.get("funding_rate", 0)
+    ma7  = indicators.get("ma7_1h")
+    ma25 = indicators.get("ma25_1h")
+    ma99 = indicators.get("ma99_1h")
+    bb_data = indicators.get("bb_1h", {})
+    bb = bb_data.get("pct_b", 0.5) if isinstance(bb_data, dict) else 0.5
+
+    if ma7 and ma25 and ma99 and ma7 < ma25 < ma99:
+        s_trend = 25
+    elif ma7 and ma25 and ma7 < ma25:
+        s_trend = 15
+    else:
+        s_trend = 0
+
+    if rsi >= 80:     s_rsi = 25
+    elif rsi >= 75:   s_rsi = 20
+    elif rsi >= 70:   s_rsi = 12
+    else:             s_rsi = 0
+
+    if vr >= 2.0:     s_vol = 20
+    elif vr >= 1.5:   s_vol = 15
+    elif vr >= 1.0:   s_vol = 8
+    else:             s_vol = 0
+
+    if bb > 1.0:      s_bb = 15
+    elif bb > 0.8:    s_bb = 12
+    elif bb > 0.7:    s_bb = 6
+    else:             s_bb = 0
+
+    if fr > 0.001:    s_fr = 15
+    elif fr > 0.0005: s_fr = 8
+    else:             s_fr = 0
+
+    return max(0, min(100, s_trend + s_rsi + s_vol + s_bb + s_fr))
+
+
 def _get_direction(score: int, indicators: dict) -> str:
     rsi  = indicators.get("rsi_1h", 50)
     fr   = indicators.get("funding_rate", 0)
     ma7  = indicators.get("ma7_1h")
     ma25 = indicators.get("ma25_1h")
     ma99 = indicators.get("ma99_1h")
-    # 對齊 lana-monitor：三條均線全排才算真多頭
+
     trend_full = bool(ma7 and ma25 and ma99 and ma7 > ma25 > ma99)
     trend_mild = bool(ma7 and ma25 and ma7 > ma25)
 
+    # 多頭：三條均線全排 + 分數>=70 + RSI未超買
     if score >= 70 and trend_full and rsi < 72:
         return "LONG"
-    elif rsi > 75 or (fr > 0.001 and not trend_mild):
-        return "SHORT"
-    else:
-        return "WATCH"
 
+    # 空頭：專屬評分>=65 + 趨勢偏空 + RSI偏高
+    short_score = _calc_short_score(indicators)
+    vr = indicators.get("vol_ratio_1h", indicators.get("vol_ratio")) or 1.0
+    if short_score >= 65 and not trend_mild and rsi >= 68:
+        return "SHORT"
+    # 額外空頭：極度超買+放量+高資金費率
+    if rsi >= 78 and vr >= 1.5 and fr > 0.0005:
+        return "SHORT"
+
+    return "WATCH"
 
 def _build_summary(symbol: str, score: int, direction: str, indicators: dict, bb_zone: str) -> dict:
     """純規則生成摘要文字，零 API 費用"""
