@@ -68,6 +68,15 @@ def _calc_lana_score(indicators: dict) -> tuple:
     else:                    s_risk = 8
 
     score = max(0, min(100, s_trend + s_rsi + s_vol + s_bb + s_risk))
+
+    # ── K線回調扣分（與深度分析一致）─────────────────────────
+    pct_from_high = indicators.get("pct_from_high_4h", 0)
+    kline_trend   = indicators.get("kline_trend_4h", "unknown")
+    if pct_from_high < -5 and kline_trend == "down":
+        score = max(0, score - 30)  # 距高點>5%且持續下跌，強制降分
+    elif pct_from_high < -3 and kline_trend == "down":
+        score = max(0, score - 15)  # 輕微回調中
+
     return score, bb_zone
 
 
