@@ -261,8 +261,9 @@ def run_scan():
             skip = False
 
             # 量能不足：多空都排除（vol_ratio 是 None 代表資料缺失也排除）
-            if vol_ratio is None or vol_ratio < 0.8:
-                log.info(f"[排除] {coin} 量能{vol_ratio}x 不足（門檻0.8x）")
+            # 門檻提高至1.0x：低於平均量能代表動能不足，容易突破乏力
+            if vol_ratio is None or vol_ratio < 1.0:
+                log.info(f"[排除] {coin} 量能{vol_ratio}x 不足（門檻1.0x）")
                 skip = True
 
             if not skip and direction == "LONG":
