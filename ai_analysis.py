@@ -50,8 +50,8 @@ def _calc_lana_score(indicators: dict) -> tuple:
     elif vr >= 2.0:  s_vol = 18
     elif vr >= 1.5:  s_vol = 14
     elif vr >= 1.2:  s_vol = 10
-    elif vr >= 0.8:  s_vol = 4    # 偏弱
-    else:            s_vol = 0    # < 0.8 給 0 分
+    elif vr >= 1.0:  s_vol = 6    # 略低於平均，偏弱
+    else:            s_vol = 0    # < 1.0x 動能不足，0分
 
     # ── BB位置 15分 ──
     if bb < 0.3:     s_bb = 15
