@@ -51,6 +51,22 @@ def calc_indicators(klines_1h: list, klines_15m: list, klines_4h: list = None) -
         result["ma25_4h"] = None
         result["trend_4h"] = "unknown"
 
+    # ── 近4根4H K線：距高點%與短期方向（與深度分析一致）──────────
+    if klines_4h and len(klines_4h) >= 4:
+        last4 = klines_4h[-4:]
+        highs4  = [k[2] for k in last4]
+        closes4 = [k[4] for k in last4]
+        recent_high = max(highs4)
+        price_now = closes_1h[-1]
+        pct_from_high = ((price_now - recent_high) / recent_high * 100) if recent_high else 0
+        rising = sum(1 for i in range(1, len(closes4)) if closes4[i] > closes4[i-1])
+        kline_trend_4h = "up" if rising >= 3 else ("down" if rising <= 1 else "side")
+        result["pct_from_high_4h"] = pct_from_high
+        result["kline_trend_4h"]   = kline_trend_4h
+    else:
+        result["pct_from_high_4h"] = 0
+        result["kline_trend_4h"]   = "unknown"
+
     return result
 
 
