@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 MIN_SCORE   = int(os.getenv("MIN_SCORE_TO_ALERT", "76"))
 MIN_CHANGE  = float(os.getenv("MIN_CHANGE_PCT", "3"))
 MIN_VOL     = float(os.getenv("MIN_VOLUME_USDT", "500000"))
-MAX_COINS   = int(os.getenv("MAX_COINS_TO_SCAN", "50"))
+MAX_COINS   = int(os.getenv("MAX_COINS_TO_SCAN", "25"))
 SCAN_INTERVAL = int(os.getenv("SCAN_INTERVAL_MIN", "15"))
 
 MAJORS  = {"BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","MATIC","LINK","UNI"}
@@ -38,6 +38,8 @@ _cache = {
     "scan_count": 0,
 }
 _cache_lock = threading.Lock()
+_scan_running = False
+_scan_running_lock = threading.Lock()
 
 # 去重：記錄每顆幣最後推送的 timestamp，冷卻期內不重複推
 _last_alerted = {}  # {symbol: timestamp}
@@ -72,9 +74,27 @@ def index():
 
 @app.route("/api/trigger_scan", methods=["POST", "GET"])
 def api_trigger_scan():
-    """Railway Cron Job 呼叫此端點觸發掃描（解決雙 instance 重複推送）"""
+    """Railway Cron Job 呼叫此端點觸發掃描（防止上一輪未結束時重疊執行）"""
     import threading
-    t = threading.Thread(target=run_scan, daemon=True)
+    global _scan_running
+    with _scan_running_lock:
+        if _scan_running:
+            log.warning("⛔ 上一輪掃描尚未結束，本次觸發略過（避免重疊推送）")
+            return {"status": "skipped_already_running",
+                    "ts": datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")}
+        _scan_running = True
+
+    def _wrapped_scan():
+        global _scan_running
+        try:
+            run_scan()
+        except Exception as e:
+            log.error(f"run_scan 例外: {e}")
+        finally:
+            with _scan_running_lock:
+                _scan_running = False
+
+    t = threading.Thread(target=_wrapped_scan, daemon=True)
     t.start()
     return {"status": "triggered", "ts": datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")}
 
@@ -192,6 +212,7 @@ def get_best_candidates(funding_rates: dict) -> list:
 
 
 def run_scan():
+    _scan_start = time.time()
     log.info("═══ LANA Meme Scanner v4.1 開始掃描 ═══")
     funding_rates = fetch_funding_rates()
     candidates = get_best_candidates(funding_rates)
@@ -200,9 +221,9 @@ def run_scan():
 
     for coin, exchange in candidates:
         try:
-            k1h  = get_all_klines(coin, exchange, "1h",  100)
-            k15m = get_all_klines(coin, exchange, "15m", 100)
-            k4h  = get_all_klines(coin, exchange, "4h",  50)
+            k1h  = get_all_klines(coin, exchange, "1h",  50)
+            k15m = get_all_klines(coin, exchange, "15m", 30)
+            k4h  = get_all_klines(coin, exchange, "4h",  30)
             if not k1h or not k15m:
                 log.warning(f"[{exchange}] {coin} 無資料，跳過")
                 continue
@@ -301,6 +322,9 @@ def run_scan():
         _cache["top_signals"] = top_signals
         _cache["last_scan"]   = now_str
         _cache["scan_count"] += 1
+
+    elapsed = time.time() - _scan_start
+    log.info(f"═══ 掃描完成，耗時 {elapsed:.1f} 秒，共 {len(all_results)} 個結果 ═══")
 
     # 推 Telegram（按分數高到低排序，本輪去重）
     global _last_alerted, _last_alerted_time
